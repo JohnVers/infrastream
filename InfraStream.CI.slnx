@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/InfraStream.Core/InfraStream.Core.csproj" />
+    <Project Path="src/InfraStream.CollectorEngine/InfraStream.CollectorEngine.csproj" />
+    <Project Path="src/InfraStream.Host/InfraStream.Host.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CollectorEngine.Tests/CollectorEngine.Tests.csproj" />
+  </Folder>
+</Solution>

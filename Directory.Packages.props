@@ -1,0 +1,82 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ======================================== -->
+    <!-- .NET Core / ASP.NET Core                 -->
+    <!-- ======================================== -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.9"/>
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="9.0.16"/>
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc" Version="10.0.9"/>
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9"/>
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.9"/>
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9"/>
+    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.9"/>
+    <PackageVersion Include="Microsoft.Extensions.Logging.Json" Version="10.0.9"/>
+    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.9"/>
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.9"/>
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.9"/>
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.9"/>
+
+    <!-- ======================================== -->
+    <!-- Cache                                    -->
+    <!-- ======================================== -->
+    <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.9"/>
+    <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="9.10.0"/>
+    <PackageVersion Include="StackExchange.Redis" Version="2.13.1"/>
+
+    <!-- ======================================== -->
+    <!-- ASP.NET Core (API, RateLimiting)         -->
+    <!-- ======================================== -->
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="9.0.16"/>
+    <PackageVersion Include="Microsoft.AspNetCore.RateLimiting" Version="10.0.9"/>
+
+    <!-- ======================================== -->
+    <!-- Swagger / OpenAPI                        -->
+    <!-- ======================================== -->
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="6.9.0"/>
+    <PackageVersion Include="Swashbuckle.AspNetCore.Annotations" Version="6.9.0"/>
+    <PackageVersion Include="Swashbuckle.AspNetCore.SwaggerUI" Version="6.9.0"/>
+    <PackageVersion Include="Microsoft.OpenApi" Version="1.6.22"/>
+    <PackageVersion Include="Microsoft.OpenApi.Models" Version="1.6.22"/>
+
+    <!-- ======================================== -->
+    <!-- OpenTelemetry                            -->
+    <!-- ======================================== -->
+    <PackageVersion Include="OpenTelemetry" Version="1.15.3"/>
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.9.0"/>
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.9.0"/>
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.0"/>
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.0"/>
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0"/>
+
+    <!-- ======================================== -->
+    <!-- System / Core                            -->
+    <!-- ======================================== -->
+    <PackageVersion Include="System.Text.Json" Version="10.0.6"/>
+    <PackageVersion Include="System.Threading.Channels" Version="10.0.6"/>
+    <PackageVersion Include="System.Diagnostics.DiagnosticSource" Version="9.0.16"/>
+    <PackageVersion Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.1"/>
+    <PackageVersion Include="System.Memory" Version="4.6.2"/>
+    <PackageVersion Include="System.Buffers" Version="4.6.1"/>
+
+    <!-- ======================================== -->
+    <!-- Tests                                    -->
+    <!-- ======================================== -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1"/>
+    <PackageVersion Include="xunit" Version="2.9.3"/>
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4"/>
+    <PackageVersion Include="Moq" Version="4.20.72"/>
+    <PackageVersion Include="coverlet.collector" Version="6.0.4"/>
+
+    <!-- ======================================== -->
+    <!-- Benchmarks                               -->
+    <!-- ======================================== -->
+    <PackageVersion Include="BenchmarkDotNet" Version="0.14.0"/>
+    <PackageVersion Include="NBomber" Version="4.0.1"/>
+    <PackageVersion Include="NBomber.Http" Version="4.0.1"/>
+    <PackageVersion Include="NBomber.Contracts" Version="4.0.1"/>
+  </ItemGroup>
+</Project>

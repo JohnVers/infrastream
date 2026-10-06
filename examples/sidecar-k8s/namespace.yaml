@@ -1,0 +1,10 @@
+# Namespace for the InfraStream sidecar example.
+# Keeps the demo isolated from the rest of the cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: infrastream-demo
+  labels:
+    app.kubernetes.io/name: infrastream
+    app.kubernetes.io/part-of: infrastream-demo
+    app.kubernetes.io/managed-by: kubectl

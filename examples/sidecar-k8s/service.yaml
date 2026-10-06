@@ -1,0 +1,25 @@
+# Optional ClusterIP Service exposing the InfraStream gateway ingress to
+# other pods in the cluster.
+#
+# In the pure sidecar pattern the gateway is only reachable via localhost
+# inside the pod, and this Service is not required. Apply it if you want
+# other workloads to be able to send telemetry to this gateway over the
+# cluster network.
+apiVersion: v1
+kind: Service
+metadata:
+  name: infrastream-gateway
+  namespace: infrastream-demo
+  labels:
+    app: my-app
+    app.kubernetes.io/name: infrastream
+    app.kubernetes.io/part-of: infrastream-demo
+spec:
+  type: ClusterIP
+  selector:
+    app: my-app
+  ports:
+    - name: ingress
+      port: 5005
+      targetPort: ingress
+      protocol: TCP

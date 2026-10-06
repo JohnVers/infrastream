@@ -1,0 +1,41 @@
+<Solution>
+    <Folder Name="/deploy/">
+        <File Path="deploy\docker-compose.yml" />
+        <File Path="deploy\gateway.Dockerfile" />
+        <File Path="deploy\run_bench.sh" />
+    </Folder>
+    <Folder Name="/docs/">
+        <File Path="docs\architecture.md" />
+        <File Path="docs\comparison.md" />
+    </Folder>
+    <Folder Name="/examples/">
+        <File Path="examples\README.md" />
+    </Folder>
+    <Folder Name="/examples/custom-exporter/">
+        <File Path="examples\custom-exporter\README.md" />
+        <Project Path="examples\custom-exporter\InfraStream.Examples.CustomExporter\InfraStream.Examples.CustomExporter.csproj" />
+    </Folder>
+    <Folder Name="/examples/embedded-aspnet/">
+        <File Path="examples\embedded-aspnet\curl-example.sh" />
+        <File Path="examples\embedded-aspnet\README.md" />
+        <Project Path="examples/embedded-aspnet/InfraStream.Examples.Embedded/InfraStream.Examples.Embedded.csproj" />
+    </Folder>
+    <Folder Name="/examples/sidecar-k8s/">
+        <File Path="examples\sidecar-k8s\configmap.yaml" />
+        <File Path="examples\sidecar-k8s\deployment.yaml" />
+        <File Path="examples\sidecar-k8s\namespace.yaml" />
+        <File Path="examples\sidecar-k8s\README.md" />
+        <File Path="examples\sidecar-k8s\service.yaml" />
+    </Folder>
+    <Folder Name="/src/">
+        <Project Path="src/InfraStream.CollectorEngine/InfraStream.CollectorEngine.csproj" />
+        <Project Path="src/InfraStream.Core/InfraStream.Core.csproj" />
+        <Project Path="src/InfraStream.Host/InfraStream.Host.csproj" />
+    </Folder>
+    <Folder Name="/tests/">
+        <File Path="tests\load_test.py" />
+        <Project Path="tests/CollectorEngine.Benchmarks/CollectorEngine.Benchmarks.csproj" />
+        <Project Path="tests/CollectorEngine.Tests/CollectorEngine.Tests.csproj" />
+        <Project Path="tests/LoadTests/LoadTests.csproj" />
+    </Folder>
+</Solution>

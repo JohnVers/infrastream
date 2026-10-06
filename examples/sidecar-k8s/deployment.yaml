@@ -1,0 +1,124 @@
+# Single-pod Deployment with two containers:
+#   - `app`                  — placeholder application (nginx:alpine)
+#   - `infrastream-gateway`  — telemetry sidecar
+#
+# The two containers share the pod's network namespace, so the app can reach
+# the gateway at 127.0.0.1:5005 without a Service.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  namespace: infrastream-demo
+  labels:
+    app: my-app
+    app.kubernetes.io/name: my-app
+    app.kubernetes.io/part-of: infrastream-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+        app.kubernetes.io/name: my-app
+        app.kubernetes.io/part-of: infrastream-demo
+    spec:
+      # Run both containers as a non-root user.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+
+      containers:
+        # ------------------------------------------------------------------
+        # Placeholder application container.
+        # Replace this with your real application image.
+        # ------------------------------------------------------------------
+        - name: app
+          image: nginx:alpine
+          ports:
+            - name: http
+              containerPort: 80
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+
+        # ------------------------------------------------------------------
+        # InfraStream gateway sidecar.
+        # The app talks to it at 127.0.0.1:5005.
+        # ------------------------------------------------------------------
+        - name: infrastream-gateway
+          image: infrastream/gateway:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: ingress
+              containerPort: 5005
+            - name: management
+              containerPort: 5002
+          env:
+            # Standard ASP.NET Core env-override convention.
+            # These duplicate the ConfigMap on purpose to show how
+            # individual keys can be overridden at the Deployment level.
+            - name: InfraStream__IngressPort
+              value: "5005"
+            - name: InfraStream__ManagementPort
+              value: "5002"
+            - name: InfraStream__WorkerCount
+              value: "2"
+            - name: InfraStream__QueueCapacity
+              value: "64"
+            # .NET GC tuning for containerized workloads (see docker-compose.yml).
+            - name: DOTNET_gcServer
+              value: "1"
+            - name: DOTNET_GCLatencyMode
+              value: "3"
+          volumeMounts:
+            # Mount the ConfigMap as a single file into the app directory.
+            # `subPath` is required so that the ConfigMap does not shadow
+            # the rest of /app (the published DLLs).
+            - name: config
+              mountPath: /app/appsettings.json
+              subPath: appsettings.json
+              readOnly: true
+            # The container runs with a read-only root filesystem; /tmp is
+            # provided as an emptyDir for any transient files.
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            tcpSocket:
+              port: management
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: management
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+      volumes:
+        - name: config
+          configMap:
+            name: infrastream-config
+        - name: tmp
+          emptyDir: {}

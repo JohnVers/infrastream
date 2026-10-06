@@ -1,0 +1,25 @@
+# Configuration for the InfraStream gateway sidecar.
+#
+# The entire appsettings.json is stored as a single key and mounted into the
+# gateway container as a file. Environment variables (defined in
+# deployment.yaml) override individual keys using the standard ASP.NET Core
+# convention: InfraStream__<Key>.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: infrastream-config
+  namespace: infrastream-demo
+  labels:
+    app.kubernetes.io/name: infrastream
+    app.kubernetes.io/part-of: infrastream-demo
+data:
+  appsettings.json: |
+    {
+      "InfraStream": {
+        "IngressPort": 5005,
+        "ManagementPort": 5002,
+        "WorkerCount": 2,
+        "QueueCapacity": 64
+      },
+      "AllowedHosts": "*"
+    }
