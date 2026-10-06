@@ -4,17 +4,17 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# Копируем Directory.Packages.props (Central Package Management)
+# Copy Directory.Packages.props (Central Package Management).
 COPY Directory.Packages.props .
 
-# Копируем csproj и восстанавливаем
+# Copy the csproj and restore.
 COPY tests/LoadTests/LoadTests.csproj tests/LoadTests/
 RUN dotnet restore tests/LoadTests/LoadTests.csproj
 
-# Копируем остальные исходники
+# Copy the remaining sources.
 COPY tests/LoadTests/ tests/LoadTests/
 
-# Публикуем
+# Publish.
 RUN dotnet publish tests/LoadTests/LoadTests.csproj \
     -c Release \
     -o /app/publish \

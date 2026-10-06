@@ -9,13 +9,13 @@
     <RootNamespace>LoadTests</RootNamespace>
     <AssemblyName>LoadTests</AssemblyName>
 
-    <!-- Оптимизации для бенчмарка -->
+    <!-- Benchmark-specific optimizations. -->
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <TieredPGO>true</TieredPGO>
     <InvariantGlobalization>true</InvariantGlobalization>
 
-    <!-- Отключаем генерацию документации -->
+    <!-- Disable documentation generation. -->
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
 
     <NoWarn>$(NoWarn);NU1902;NU1903;NU1603;NU1608</NoWarn>
