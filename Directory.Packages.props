@@ -51,6 +51,7 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.0"/>
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.0"/>
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0"/>
+    <PackageVersion Include="Confluent.Kafka" Version="2.6.0" />
 
     <!-- ======================================== -->
     <!-- System / Core                            -->

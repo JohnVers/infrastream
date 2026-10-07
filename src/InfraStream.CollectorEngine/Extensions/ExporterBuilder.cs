@@ -1,4 +1,6 @@
+using InfraStream.Core.Configuration;
 using InfraStream.Core.Exporters;
+using Microsoft.Extensions.Options;
 
 namespace InfraStream.CollectorEngine.Extensions;
 
@@ -11,21 +13,43 @@ namespace InfraStream.CollectorEngine.Extensions;
 /// builder.AddExporters(exporters => exporters
 ///     .Null()
 ///     .OpenTelemetry("http://otel-collector:4317")
-///     .Kafka("kafka:9092", "telemetry"));
+///     .Kafka(new KafkaExporterOptions
+///     {
+///         BootstrapServers = "kafka:9092",
+///         Topic = "telemetry",
+///         DeadLetterTopic = "telemetry-dead-letter",
+///         DiskSpillPath = "/var/lib/infrastream/spill/",
+///     }));
 /// </code>
+/// <para>
+/// Alternatively, bind the Kafka options from configuration:
+/// <code>
+/// builder.AddExporters(exporters => exporters
+///     .Null()
+///     .KafkaFromConfiguration());
+/// </code>
+/// </para>
 /// </remarks>
 public sealed class ExporterBuilder
 {
     private readonly IServiceCollection _services;
+    private readonly IConfiguration _configuration;
 
     /// <summary>
     /// Initializes a new instance of the
     /// <see cref="ExporterBuilder"/> class.
     /// </summary>
     /// <param name="services">Service collection to register exporters into.</param>
-    internal ExporterBuilder(IServiceCollection services)
+    /// <param name="configuration">
+    /// Application configuration used by the <c>*FromConfiguration</c>
+    /// methods.
+    /// </param>
+    internal ExporterBuilder(
+        IServiceCollection services,
+        IConfiguration configuration)
     {
         _services = services;
+        _configuration = configuration;
     }
 
     /// <summary>
@@ -54,14 +78,68 @@ public sealed class ExporterBuilder
     /// <summary>
     /// Registers the Kafka exporter.
     /// </summary>
-    /// <param name="bootstrapServers">
-    /// Kafka bootstrap servers (e.g. <c>kafka:9092</c>).
+    /// <param name="options">
+    /// Full Kafka exporter configuration: bootstrap servers, topic,
+    /// dead-letter topic, spill path, buffer size, and timeouts.
     /// </param>
-    /// <param name="topic">Target topic for telemetry.</param>
-    public ExporterBuilder Kafka(string bootstrapServers, string topic)
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="options"/> is <see langword="null"/>.
+    /// </exception>
+    public ExporterBuilder Kafka(KafkaExporterOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
         _services.AddSingleton<ITelemetryExporter>(sp =>
-            new KafkaExporter(bootstrapServers, topic));
+            new KafkaExporter(
+                options,
+                sp.GetRequiredService<ILogger<KafkaExporter>>()));
+
+        return this;
+    }
+
+    /// <summary>
+    /// Registers the Kafka exporter using configuration bound from the
+    /// <c>InfraStream:Exporters:Kafka</c> section of <c>appsettings.json</c>
+    /// (or environment variables).
+    /// </summary>
+    /// <remarks>
+    /// Example <c>appsettings.json</c>:
+    /// <code>
+    /// {
+    ///   "InfraStream": {
+    ///     "Exporters": {
+    ///       "Kafka": {
+    ///         "BootstrapServers": "kafka:9092",
+    ///         "Topic": "telemetry",
+    ///         "DeadLetterTopic": "telemetry-dead-letter",
+    ///         "DiskSpillPath": "/var/lib/infrastream/spill/"
+    ///       }
+    ///     }
+    ///   }
+    /// }
+    /// </code>
+    /// Environment override:
+    /// <code>
+    /// InfraStream__Exporters__Kafka__BootstrapServers=kafka:9092
+    /// </code>
+    /// </remarks>
+    public ExporterBuilder KafkaFromConfiguration()
+    {
+        _services
+            .AddOptions<KafkaExporterOptions>()
+            .Bind(_configuration.GetSection(KafkaExporterOptions.SectionName));
+
+        _services.AddSingleton<ITelemetryExporter>(sp =>
+        {
+            var options = sp
+                .GetRequiredService<IOptions<KafkaExporterOptions>>()
+                .Value;
+
+            return new KafkaExporter(
+                options,
+                sp.GetRequiredService<ILogger<KafkaExporter>>());
+        });
+
         return this;
     }
 

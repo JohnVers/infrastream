@@ -1,4 +1,8 @@
+using InfraStream.Core.Configuration;
 using InfraStream.Core.Exporters;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace InfraStream.CollectorEngine.Extensions;
 
@@ -6,17 +10,26 @@ namespace InfraStream.CollectorEngine.Extensions;
 /// Fluent registration of telemetry exporters.
 /// </summary>
 /// <remarks>
-/// Example:
-/// <code>
-/// builder.AddCollectorEngine()
-///        .AddNullExporter()
-///        .AddOpenTelemetryExporter("http://otel:4317")
-///        .AddKafkaExporter("kafka:9092", "telemetry");
-/// </code>
-/// <para>
-/// All methods return <see cref="CollectorEngineBuilder"/> so that the
-/// chain can continue.
-/// </para>
+/// Two styles are supported:
+/// <list type="bullet">
+///   <item>
+///     <b>Extension methods</b> on <see cref="CollectorEngineBuilder"/>:
+///     <code>
+///     builder.AddCollectorEngine()
+///            .AddNullExporter()
+///            .AddKafkaExporter(new KafkaExporterOptions { ... });
+///     </code>
+///   </item>
+///   <item>
+///     <b>Fluent builder</b> via <see cref="AddExporters"/>:
+///     <code>
+///     builder.AddCollectorEngine()
+///            .AddExporters(exporters => exporters
+///                .Null()
+///                .KafkaFromConfiguration());
+///     </code>
+///   </item>
+/// </list>
 /// </remarks>
 public static class ExporterExtensions
 {
@@ -67,17 +80,84 @@ public static class ExporterExtensions
     /// Registers the Kafka exporter.
     /// </summary>
     /// <param name="collector">Collector Engine builder.</param>
-    /// <param name="bootstrapServers">
-    /// Kafka bootstrap servers (e.g. <c>kafka:9092</c>).
+    /// <param name="options">
+    /// Full Kafka exporter configuration: bootstrap servers, topic,
+    /// dead-letter topic, spill path, buffer size, and timeouts.
     /// </param>
-    /// <param name="topic">Target topic for telemetry.</param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="options"/> is <see langword="null"/>.
+    /// </exception>
     public static CollectorEngineBuilder AddKafkaExporter(
         this CollectorEngineBuilder collector,
-        string bootstrapServers,
-        string topic)
+        KafkaExporterOptions options)
     {
-        collector.Services.AddSingleton<ITelemetryExporter>(_ =>
-            new KafkaExporter(bootstrapServers, topic));
+        ArgumentNullException.ThrowIfNull(options);
+
+        collector.Services.AddSingleton<ITelemetryExporter>(sp =>
+            new KafkaExporter(
+                options,
+                sp.GetRequiredService<ILogger<KafkaExporter>>()));
+
+        return collector;
+    }
+
+    /// <summary>
+    /// Registers the Kafka exporter using configuration bound from the
+    /// <c>InfraStream:Exporters:Kafka</c> section of <c>appsettings.json</c>.
+    /// </summary>
+    /// <param name="collector">Collector Engine builder.</param>
+    public static CollectorEngineBuilder AddKafkaExporterFromConfiguration(
+        this CollectorEngineBuilder collector)
+    {
+        collector.Services
+            .AddOptions<KafkaExporterOptions>()
+            .Bind(collector.Builder.Configuration
+                .GetSection(KafkaExporterOptions.SectionName));
+
+        collector.Services.AddSingleton<ITelemetryExporter>(sp =>
+        {
+            var options = sp
+                .GetRequiredService<IOptions<KafkaExporterOptions>>()
+                .Value;
+
+            return new KafkaExporter(
+                options,
+                sp.GetRequiredService<ILogger<KafkaExporter>>());
+        });
+
+        return collector;
+    }
+
+    /// <summary>
+    /// Registers one or more exporters using a fluent builder.
+    /// </summary>
+    /// <remarks>
+    /// Example:
+    /// <code>
+    /// builder.AddCollectorEngine()
+    ///        .AddExporters(exporters => exporters
+    ///            .Null()
+    ///            .KafkaFromConfiguration());
+    /// </code>
+    /// </remarks>
+    /// <param name="collector">Collector Engine builder.</param>
+    /// <param name="configure">
+    /// Action that configures the <see cref="ExporterBuilder"/>.
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="configure"/> is <see langword="null"/>.
+    /// </exception>
+    public static CollectorEngineBuilder AddExporters(
+        this CollectorEngineBuilder collector,
+        Action<ExporterBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var builder = new ExporterBuilder(
+            collector.Services,
+            collector.Builder.Configuration);
+
+        configure(builder);
         return collector;
     }
 
