@@ -123,7 +123,7 @@ InfraStream is positioned as an **alternative, especially convenient for
 
 - [`docs/architecture.md`](docs/architecture.md) — internal design, pipeline
   diagram, key design decisions.
-- [`Roadmap.md`](Roadmap.md) — what's planned (Phase 3–5) and known
+- [`KnownIssues.md`](KnownIssues.md) — known limitations of the current version.
   limitations of the current version.
 - [`examples/`](examples/) — runnable examples.
 
