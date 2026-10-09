@@ -1,3 +1,5 @@
+using InfraStream.CollectorEngine.Ingress;
+
 namespace InfraStream.CollectorEngine.Queues;
 
 /// <summary>
@@ -26,10 +28,14 @@ public sealed class TelemetryBatchPayload : IDisposable
     public int Length { get; internal set; }
 
     /// <summary>
-    /// Whether the data is compressed (Brotli/gzip) or passed through
-    /// as-is. If <see langword="false"/>, the worker skips decompression.
+    /// Content encoding of the payload as declared by the client in the
+    /// <c>Content-Encoding</c> header.
     /// </summary>
-    public bool IsCompressed { get; set; }
+    /// <remarks>
+    /// <see cref="ContentEncoding.Identity"/> means the payload is
+    /// uncompressed and the worker must not attempt decompression.
+    /// </remarks>
+    public ContentEncoding ContentEncoding { get; set; } = ContentEncoding.Identity;
 
     /// <summary>
     /// Session metadata attached at the socket layer.
@@ -73,7 +79,7 @@ public sealed class TelemetryBatchPayload : IDisposable
 
         NodeId = string.Empty;
         Environment = string.Empty;
-        IsCompressed = false;
+        ContentEncoding = ContentEncoding.Identity;
         Length = 0;
 
         TelemetryBatchPool.Return(this);

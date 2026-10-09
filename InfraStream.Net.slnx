@@ -8,6 +8,11 @@
         <File Path="docs\architecture.md" />
         <File Path="docs\comparison.md" />
     </Folder>
+    <Folder Name="/docs/benchmarks/">
+        <File Path="docs\benchmarks\hardware.md" />
+        <File Path="docs\benchmarks\index.md" />
+        <File Path="docs\benchmarks\ingress.md" />
+    </Folder>
     <Folder Name="/examples/">
         <File Path="examples\README.md" />
     </Folder>

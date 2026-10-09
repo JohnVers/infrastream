@@ -99,6 +99,4 @@ inspecting the output.
 
 - These examples are intentionally minimal. They are **not** production-grade:
   no authentication, no TLS, no persistence, no retry logic.
-- For the full feature set and roadmap, see the repository root `README.md`
-  and `Roadmap.md`.
 - For design documentation, see [`docs/architecture.md`](../docs/architecture.md).

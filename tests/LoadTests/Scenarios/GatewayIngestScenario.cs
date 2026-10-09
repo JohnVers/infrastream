@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using LoadTests.Payloads;
 using NBomber.CSharp;
 using NBomber.Http.CSharp;
 using NBomber.Contracts;
@@ -11,18 +12,29 @@ namespace LoadTests.Scenarios;
 /// </summary>
 public static class GatewayIngestScenario
 {
-    public const string ScenarioName = "gateway_ingest";
-
     private static HttpClient? _httpClient;
 
+    /// <summary>
+    /// Returns the NBomber scenario name for a given encoding.
+    /// The encoding is part of the name so that reports from different
+    /// encodings are distinguishable.
+    /// </summary>
+    public static string GetScenarioName(PayloadEncoding encoding)
+        => $"gateway_ingest_{encoding.ToString().ToLowerInvariant()}";
+
+    /// <summary>
+    /// Builds a scenario for a specific payload encoding.
+    /// </summary>
     public static ScenarioProps Build(
         string url,
         byte[][] payloads,
         int copies,
         TimeSpan duration,
-        bool compress)
+        PayloadEncoding encoding)
     {
-        return Scenario.Create(ScenarioName, async context =>
+        string scenarioName = GetScenarioName(encoding);
+
+        return Scenario.Create(scenarioName, async context =>
             {
                 int idx = (int)(context.InvocationNumber % payloads.Length);
                 byte[] payload = payloads[idx];
@@ -36,8 +48,18 @@ public static class GatewayIngestScenario
                     .WithHeader("X-Api-Key", "system-gateway-secure-token-777")
                     .WithBody(new ByteArrayContent(payload));
 
-                if (compress)
-                    request.Content!.Headers.ContentEncoding.Add("br");
+                switch (encoding)
+                {
+                    case PayloadEncoding.Brotli:
+                        request.Content!.Headers.ContentEncoding.Add("br");
+                        break;
+                    case PayloadEncoding.Gzip:
+                        request.Content!.Headers.ContentEncoding.Add("gzip");
+                        break;
+                    case PayloadEncoding.Identity:
+                        // No Content-Encoding header.
+                        break;
+                }
 
                 request.Content!.Headers.ContentType = new MediaTypeHeaderValue("application/json")
                 {

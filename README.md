@@ -21,8 +21,8 @@ application, deployed as a sidecar, or run standalone.
 - **Zero-allocation hot path.** `Utf8JsonReader`, `ArrayPool<byte>`,
   `BoundedChannel<T>`, and in-place PII masking. No UTF-16 conversions
   during parsing.
-- **Small footprint.** 2.15M log lines/s with PII masking on **1 CPU core**
-  and **229 MB RAM**. Scales to 7.75M lines/s on 4 cores.
+- **Small footprint.** ~2.1M log lines/s with PII masking on **1 CPU core**
+  and **~220 MB RAM**. Scales to ~7.7M lines/s on 4 cores.
 - **Native .NET integration.** `ILogger`, DI, `IOptions`, `Span<T>`,
   `appsettings.json`. One language for the whole team.
 - **MIT license.** Permissive. No copyleft obligations. Safe to embed in
@@ -51,16 +51,22 @@ runnable example.
 
 ## Performance
 
-Measured with PII masking enabled, batch size 10 000 lines, Brotli-compressed
-payloads.
+Measured with PII masking enabled, batch size 10,000 lines, Brotli-compressed
+payloads, `NullExporter`.
 
 ### Reference hardware (macOS M5 Max via Docker Desktop)
 
 | Config | RPS | lines/s | p50 | p99 | RAM |
 |---|---|---|---|---|---|
-| 1 CPU, 1 worker | 215 | 2.15M | 262 ms | 1000 ms | 229 MB |
-| 2 CPU, 2 workers | 408 | 4.07M | 144 ms | 436 ms | 189 MB |
-| **4 CPU, 4 workers** | **775** | **7.75M** | **149 ms** | **383 ms** | **264 MB** |
+| **1 CPU, 1 worker** | **210** | **2.1M** | **~270 ms** | **~930 ms** | **~220 MB** |
+| 2 CPU, 2 workers | 405 | 4.1M | ~145 ms | ~440 ms | ~180 MB |
+| 4 CPU, 4 workers | 770 | 7.7M | ~150 ms | ~390 ms | ~280 MB |
+
+A single CPU core with 1 GB RAM handles ~2.1M lines/s with PII masking
+enabled — enough for ~1,000 nodes emitting up to 1,000 lines/s each, with
+headroom. See [`docs/benchmarks/ingress.md`](docs/benchmarks/ingress.md)
+for the full results, including encoding comparison, batch-size effects,
+scaling, and capacity examples.
 
 > **These numbers are not representative of typical production hardware.**
 > Benchmarks on commodity x64 hardware are in progress.
@@ -68,15 +74,17 @@ payloads.
 > **Note:** all numbers above are measured with `NullExporter` — a
 > zero-overhead sink used for benchmarking. Real exporters (Kafka,
 > ClickHouse, OTLP) will add serialization, network I/O, and copy costs.
+>
+> Per-run variance is roughly ±5 % for RPS and up to ±30 % for p99.
 
 ---
 
 ## Features
 
-- **Raw TCP ingress** with HTTP/1.1 header parsing (`X-Node-Id`,
-  `X-Environment`, `Content-Encoding`).
-- **Brotli decompression** transparently handled if the payload is
-  compressed.
+- **HTTP/1.1 ingress over raw TCP**, with `X-Node-Id`, `X-Environment`,
+  and `Content-Encoding` header parsing.
+- **Pluggable content decoding** — `Content-Encoding` is negotiated per
+  request; identity (raw), Brotli, and gzip are supported. zstd is planned.
 - **PII masking** on `message` and sensitive attribute values
   (`password`, `secret`, `token`, `api_key`) — applied **in place**, without
   allocations on the hot path.
@@ -123,8 +131,10 @@ InfraStream is positioned as an **alternative, especially convenient for
 
 - [`docs/architecture.md`](docs/architecture.md) — internal design, pipeline
   diagram, key design decisions.
-- [`KnownIssues.md`](KnownIssues.md) — known limitations of the current version.
-  limitations of the current version.
+- [`docs/benchmarks/`](docs/benchmarks/) — performance measurements,
+  methodology, and capacity examples.
+- [`KnownIssues.md`](KnownIssues.md) — known limitations of the current
+  version.
 - [`examples/`](examples/) — runnable examples.
 
 ---

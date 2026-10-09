@@ -1,11 +1,12 @@
 using InfraStream.CollectorEngine.BackgroundServices;
 using InfraStream.CollectorEngine.Configuration;
 using InfraStream.CollectorEngine.Hosting;
+using InfraStream.CollectorEngine.Ingress;
 using InfraStream.CollectorEngine.Networking;
 using InfraStream.CollectorEngine.Queues;
 using InfraStream.Core.Exporters;
 using InfraStream.Core.Plugins;
-
+using Microsoft.Extensions.Options;
 
 namespace InfraStream.CollectorEngine.Extensions;
 
@@ -46,12 +47,15 @@ public static class CollectorEngineExtensions
             .AddOptions<InfraStreamOptions>()
             .Bind(builder.Configuration.GetSection(InfraStreamOptions.SectionName));
 
-        // 2. Read options immediately to configure Kestrel (needs values at startup).
+        // 2. Ingress options + content decoders (section "InfraStream:Ingress").
+        builder.Services.AddIngressContentDecoders(builder.Configuration);
+
+        // 3. Read options immediately to configure Kestrel (needs values at startup).
         var options = builder.Configuration
             .GetSection(InfraStreamOptions.SectionName)
             .Get<InfraStreamOptions>() ?? new InfraStreamOptions();
 
-        // 3. Resolve values: explicit argument > config/env > default.
+        // 4. Resolve values: explicit argument > config/env > default.
         int resolvedIngressPort = ingressPort ?? options.IngressPort;
         int resolvedManagementPort = managementPort ?? options.ManagementPort;
         int resolvedQueueCapacity = queueCapacity ?? options.QueueCapacity;
@@ -61,11 +65,17 @@ public static class CollectorEngineExtensions
         if (resolvedWorkerCount <= 0)
             resolvedWorkerCount = Math.Max(1, Environment.ProcessorCount);
 
-        // 4. Queue (Singleton).
+        // 5. Queue (Singleton).
         var queue = new TelemetryChannelQueue(resolvedQueueCapacity);
         builder.Services.AddSingleton(queue);
 
-        // 5. N workers. Each IHostedService creates its own TelemetryProcessorWorker.
+        // 6. Worker registry (Singleton) — collects worker instances for the
+        //    metrics reporter.
+        var workerRegistry = new WorkerRegistry();
+        builder.Services.AddSingleton(workerRegistry);
+
+        // 7. N workers. Each IHostedService creates its own TelemetryProcessorWorker
+        //    and registers it in the WorkerRegistry.
         for (int i = 0; i < resolvedWorkerCount; i++)
         {
             int index = i;
@@ -74,6 +84,8 @@ public static class CollectorEngineExtensions
             {
                 var processors = sp.GetServices<ITelemetryProcessor>().ToArray();
                 var exporters = sp.GetServices<ITelemetryExporter>().ToArray();
+                var decoders = sp.GetRequiredService<ContentDecoderRegistry>();
+                var ingressOptions = sp.GetRequiredService<IOptions<IngressOptions>>();
                 var logger = sp.GetRequiredService<ILoggerFactory>()
                     .CreateLogger($"TelemetryProcessorWorker[{index}]");
 
@@ -81,14 +93,27 @@ public static class CollectorEngineExtensions
                     sp.GetRequiredService<TelemetryChannelQueue>(),
                     processors,
                     exporters,
+                    decoders,
+                    ingressOptions,
                     logger,
                     index);
+
+                sp.GetRequiredService<WorkerRegistry>().Register(worker);
 
                 return new TelemetryWorkerHost(worker);
             });
         }
 
-        // 6. Kestrel: management HTTP + ingress raw TCP.
+        // 8. Periodic metrics reporter (Singleton hosted service).
+        builder.Services.AddSingleton<IHostedService>(sp =>
+        {
+            var registry = sp.GetRequiredService<WorkerRegistry>();
+            var logger = sp.GetRequiredService<ILoggerFactory>()
+                .CreateLogger<WorkerMetricsReporter>();
+            return new WorkerMetricsReporter(registry, logger);
+        });
+
+        // 9. Kestrel: management HTTP + ingress raw TCP.
         builder.WebHost.ConfigureKestrel(kestrelOptions =>
         {
             // Management HTTP (health, future /metrics).
@@ -101,7 +126,7 @@ public static class CollectorEngineExtensions
             });
         });
 
-        // 7. Publish resolved config via DI (for health / startup logs).
+        // 10. Publish resolved config via DI (for health / startup logs).
         builder.Services.AddSingleton(new CollectorEngineConfig(
             IngressPort: resolvedIngressPort,
             ManagementPort: resolvedManagementPort,

@@ -65,7 +65,6 @@ category of tool.
 | **Zero-allocation hot path** | Yes | Yes (C) | Yes (Rust) |
 | **Native .NET `ILogger` integration** | Yes | No | No |
 | **Native .NET DI integration** | Yes | No | No |
-| **`Span<T>` / `Utf8JsonReader`** | Yes | N/A | N/A |
 | **Configuration model** | `appsettings.json` + env | YAML / classic | TOML / YAML |
 | **Env override convention** | `InfraStream__*` (ASP.NET Core) | Custom | Custom |
 | **Built-in transforms** | No (plugins via C#) | Lua / filters | VRL |

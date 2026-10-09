@@ -14,10 +14,12 @@ InfraStream is under active development.
 
 ## Input
 
-- **Only Brotli** is supported for compressed payloads. gzip, zstd, and
-  snappy are not.
-- **Fixed decompression buffer** (16 MB). Very large batches may fail to
-  decompress.
+- **Supported encodings:** identity, Brotli, gzip. zstd and snappy are
+  not implemented yet.
+- **Decompression buffer** is configurable via
+  `InfraStream:Ingress:DecompressedBufferSize` (default 16 MB). A batch
+  whose decompressed size exceeds this limit is rejected as a batch
+  error; the worker logs a warning and increments its error counter.
 
 ## Internals
 
@@ -40,7 +42,21 @@ InfraStream is under active development.
 
 ## Performance
 
-- **Performance numbers** in the README are measured with `NullExporter` on
-  reference hardware. The overhead of the Kafka exporter is not yet
-  benchmarked; it will be documented in `docs/benchmarks.md`. Benchmarks on
-  commodity hardware are in progress.
+- **Performance numbers** in the README are measured with `NullExporter`
+  on reference hardware. The overhead of the Kafka exporter is not yet
+  benchmarked; it will be documented in
+  [`docs/benchmarks/`](docs/benchmarks/). Benchmarks on commodity hardware
+  are in progress.
+- **Throughput depends on batch size.** With 10,000-line batches,
+  InfraStream processes ~2.1M lines/s per CPU core. With single-line
+  requests, the same core handles ~95,000 requests/s — request overhead
+  dominates. See [`docs/benchmarks/ingress.md`](docs/benchmarks/ingress.md)
+  for details.
+
+## Memory
+
+- **Raw (uncompressed) large batches** use significantly more resident
+  memory than compressed ones. A 10,000-line raw batch is ~3 MB and
+  stresses the payload pool: at 1 CPU / 1 GB RAM, RSS peaks around
+  ~750 MB with raw payloads, versus ~220 MB with Brotli or gzip.
+  Compression is recommended for memory-constrained deployments.

@@ -18,6 +18,7 @@ services:
       - InfraStream__ManagementPort=${MANAGEMENT_PORT:-5002}
       - InfraStream__WorkerCount=${WORKER_COUNT:-4}
       - InfraStream__QueueCapacity=${QUEUE_CAPACITY:-64}
+      - InfraStream__Ingress__MaxBodySize=${MAX_BODY_SIZE:-1048576}
 
       # ---- .NET runtime tuning ----
       - DOTNET_gcServer=1
@@ -51,7 +52,9 @@ services:
       - LOAD_POOL_SIZE=${LOAD_POOL_SIZE:-32}
       - LOAD_COPIES=${LOAD_COPIES:-60}
       - LOAD_DURATION=${LOAD_DURATION:-60}
-      - LOAD_COMPRESS=${LOAD_COMPRESS:-true}
+      # Comma-separated list of encodings to run sequentially.
+      # Supported values: identity (or raw/none), br (or brotli), gzip (or gz).
+      - LOAD_ENCODINGS=${LOAD_ENCODINGS:-identity,br,gzip}
     volumes:
       - ../tests/LoadTests/reports:/app/reports
     deploy:

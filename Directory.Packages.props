@@ -76,8 +76,8 @@
     <!-- Benchmarks                               -->
     <!-- ======================================== -->
     <PackageVersion Include="BenchmarkDotNet" Version="0.14.0"/>
-    <PackageVersion Include="NBomber" Version="4.0.1"/>
-    <PackageVersion Include="NBomber.Http" Version="4.0.1"/>
-    <PackageVersion Include="NBomber.Contracts" Version="4.0.1"/>
+    <PackageVersion Include="NBomber" Version="4.1.0" />
+    <PackageVersion Include="NBomber.Http" Version="4.1.0" />
+    <PackageVersion Include="NBomber.Contracts" Version="4.1.0" />
   </ItemGroup>
 </Project>

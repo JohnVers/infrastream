@@ -4,7 +4,22 @@ using System.Text.Json;
 namespace LoadTests.Payloads;
 
 /// <summary>
-/// Generator for a pool of Brotli-compressed (or uncompressed) JSON batches.
+/// Content encoding applied to a generated payload.
+/// </summary>
+public enum PayloadEncoding
+{
+    /// <summary>Raw JSON, no compression.</summary>
+    Identity,
+
+    /// <summary>Brotli (<c>Content-Encoding: br</c>).</summary>
+    Brotli,
+
+    /// <summary>Gzip (<c>Content-Encoding: gzip</c>).</summary>
+    Gzip
+}
+
+/// <summary>
+/// Generator for a pool of JSON batches, optionally compressed.
 /// The pool is created ONCE before the test starts and reused.
 /// </summary>
 public static class PayloadGenerator
@@ -27,11 +42,14 @@ public static class PayloadGenerator
             .ToArray();
 
     /// <summary>
-    /// Generates <paramref name="poolSize"/> batches of <paramref name="batchSize"/> lines each.
-    /// If <paramref name="compress"/> is <see langword="true"/>, compresses with Brotli;
-    /// otherwise returns raw JSON.
+    /// Generates <paramref name="poolSize"/> batches of <paramref name="batchSize"/>
+    /// lines each, compressed according to <paramref name="encoding"/>.
     /// </summary>
-    public static byte[][] Generate(int poolSize, int batchSize, int seed = 42, bool compress = true)
+    public static byte[][] Generate(
+        int poolSize,
+        int batchSize,
+        PayloadEncoding encoding,
+        int seed = 42)
     {
         var random = new Random(seed);
         var result = new byte[poolSize][];
@@ -44,16 +62,23 @@ public static class PayloadGenerator
             byte[] jsonBytes = BuildJson(random, batchSize);
             totalRaw += jsonBytes.Length;
 
-            result[i] = compress ? BrotliCompress(jsonBytes) : jsonBytes;
+            result[i] = encoding switch
+            {
+                PayloadEncoding.Identity => jsonBytes,
+                PayloadEncoding.Brotli   => BrotliCompress(jsonBytes),
+                PayloadEncoding.Gzip     => GzipCompress(jsonBytes),
+                _ => throw new ArgumentOutOfRangeException(nameof(encoding), encoding, null)
+            };
+
             totalStored += result[i].Length;
         }
 
-        Console.WriteLine($"[PayloadGenerator] poolSize={poolSize}, batchSize={batchSize}, compress={compress}");
+        Console.WriteLine($"[PayloadGenerator] poolSize={poolSize}, batchSize={batchSize}, encoding={encoding}");
         Console.WriteLine($"[PayloadGenerator] Total raw: {totalRaw / 1024 / 1024} MB");
         Console.WriteLine($"[PayloadGenerator] Total stored: {totalStored / 1024 / 1024} MB");
         Console.WriteLine($"[PayloadGenerator] Avg raw per batch: {totalRaw / poolSize / 1024} KB");
         Console.WriteLine($"[PayloadGenerator] Avg stored per batch: {totalStored / poolSize / 1024} KB");
-        if (compress && totalStored > 0)
+        if (encoding != PayloadEncoding.Identity && totalStored > 0)
             Console.WriteLine($"[PayloadGenerator] Compression ratio: {(double)totalRaw / totalStored:F2}×");
 
         return result;
@@ -75,7 +100,7 @@ public static class PayloadGenerator
             {
                 string level = Levels[random.Next(Levels.Length)];
                 string action = Actions[random.Next(Actions.Length)];
-                string detail = Guid.NewGuid().ToString("N").Substring(0, 8);
+                string detail = Guid.NewGuid().ToString("N").AsSpan(0, 8).ToString();
 
                 string message =
                     $"{action} [req={detail}] status=200 " +
@@ -87,7 +112,7 @@ public static class PayloadGenerator
                 writer.WriteString("message", message);
                 writer.WriteString("component", Services[random.Next(Services.Length)]);
                 writer.WriteString("trace_id", Guid.NewGuid().ToString("N"));
-                writer.WriteString("span_id", Guid.NewGuid().ToString("N").Substring(0, 16));
+                writer.WriteString("span_id", Guid.NewGuid().ToString("N").AsSpan(0, 16).ToString());
                 writer.WriteEndObject();
             }
 
@@ -104,6 +129,16 @@ public static class PayloadGenerator
         using (var brotli = new BrotliStream(output, CompressionLevel.Optimal, leaveOpen: true))
         {
             brotli.Write(data, 0, data.Length);
+        }
+        return output.ToArray();
+    }
+
+    private static byte[] GzipCompress(byte[] data)
+    {
+        using var output = new MemoryStream();
+        using (var gzip = new GZipStream(output, CompressionLevel.Optimal, leaveOpen: true))
+        {
+            gzip.Write(data, 0, data.Length);
         }
         return output.ToArray();
     }

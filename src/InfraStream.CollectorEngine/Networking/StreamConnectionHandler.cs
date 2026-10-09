@@ -1,4 +1,6 @@
+using InfraStream.CollectorEngine.Ingress;
 using InfraStream.CollectorEngine.Queues;
+using Microsoft.Extensions.Options;
 
 namespace InfraStream.CollectorEngine.Networking;
 
@@ -18,18 +20,25 @@ namespace InfraStream.CollectorEngine.Networking;
 /// <c>Environment</c> are captured from the first request's headers and
 /// reused for subsequent keep-alive requests on the same connection.
 /// </para>
+/// <para>
+/// The <c>Content-Encoding</c> header is validated against the
+/// <see cref="ContentDecoderRegistry"/>: unsupported or disabled encodings
+/// are rejected with <c>415 Unsupported Media Type</c> before the payload
+/// is enqueued. Malformed headers (including an empty <c>Content-Encoding</c>
+/// value) are rejected with <c>400 Bad Request</c>. Decoding itself happens
+/// later, in the worker.
+/// </para>
 /// </remarks>
 public sealed class StreamConnectionHandler : ConnectionHandler
 {
     private const int MaxHeaderBytes = 16 * 1024;
-    private const int MaxPayloadBytes = 16 * 1024 * 1024;
 
     private static readonly byte[] EndOfHeaders = "\r\n\r\n"u8.ToArray();
     private static readonly byte[] PostPrefix   = "POST "u8.ToArray();
 
-    private static readonly byte[] ClHeader      = "content-length:"u8.ToArray();
-    private static readonly byte[] NodeIdHeader  = "x-node-id:"u8.ToArray();
-    private static readonly byte[] EnvHeader     = "x-environment:"u8.ToArray();
+    private static readonly byte[] ClHeader       = "content-length:"u8.ToArray();
+    private static readonly byte[] NodeIdHeader   = "x-node-id:"u8.ToArray();
+    private static readonly byte[] EnvHeader      = "x-environment:"u8.ToArray();
     private static readonly byte[] EncodingHeader = "content-encoding:"u8.ToArray();
 
     private static readonly byte[] ResponseAccepted =
@@ -38,15 +47,29 @@ public sealed class StreamConnectionHandler : ConnectionHandler
         "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray();
     private static readonly byte[] ResponsePayloadTooLarge =
         "HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray();
+    private static readonly byte[] ResponseUnsupportedMediaType =
+        "HTTP/1.1 415 Unsupported Media Type\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray();
 
     private readonly TelemetryChannelQueue _queue;
+    private readonly ContentDecoderRegistry _decoders;
+    private readonly int _maxBodySize;
 
     /// <summary>
     /// Initializes a new instance of the
     /// <see cref="StreamConnectionHandler"/> class.
     /// </summary>
     /// <param name="queue">Bounded channel used to hand off payloads to workers.</param>
-    public StreamConnectionHandler(TelemetryChannelQueue queue) => _queue = queue;
+    /// <param name="decoders">Registry used to validate <c>Content-Encoding</c>.</param>
+    /// <param name="ingressOptions">Ingress configuration (body size limit).</param>
+    public StreamConnectionHandler(
+        TelemetryChannelQueue queue,
+        ContentDecoderRegistry decoders,
+        IOptions<IngressOptions> ingressOptions)
+    {
+        _queue = queue;
+        _decoders = decoders;
+        _maxBodySize = ingressOptions.Value.MaxBodySize;
+    }
 
     /// <inheritdoc />
     public override async Task OnConnectedAsync(ConnectionContext connection)
@@ -72,13 +95,14 @@ public sealed class StreamConnectionHandler : ConnectionHandler
 
                     int headersLength;
                     int contentLength;
-                    bool isCompressed;
+                    ContentEncoding contentEncoding;
+                    EncodingParseResult encodingResult;
                     HeaderStatus status;
 
                     if (!sessionParsed)
                     {
                         if (!TryParseFullHeaders(buffer, out headersLength, out contentLength,
-                                out isCompressed, out nodeId, out environment, out status))
+                                out contentEncoding, out encodingResult, out nodeId, out environment, out status))
                         {
                             if (result.IsCompleted) break;
                             input.AdvanceTo(buffer.Start, buffer.End);
@@ -88,7 +112,7 @@ public sealed class StreamConnectionHandler : ConnectionHandler
                     else
                     {
                         if (!TryParseContentLengthAndEncoding(buffer, out headersLength, out contentLength,
-                                out isCompressed, out status))
+                                out contentEncoding, out encodingResult, out status))
                         {
                             if (result.IsCompleted) break;
                             input.AdvanceTo(buffer.Start, buffer.End);
@@ -102,7 +126,28 @@ public sealed class StreamConnectionHandler : ConnectionHandler
                         return;
                     }
 
-                    if (contentLength < 0 || contentLength > MaxPayloadBytes)
+                    if (encodingResult == EncodingParseResult.Malformed)
+                    {
+                        await WriteAndCloseAsync(output, ResponseBadRequest, ct).ConfigureAwait(false);
+                        return;
+                    }
+
+                    if (encodingResult == EncodingParseResult.Unsupported)
+                    {
+                        await WriteAndCloseAsync(output, ResponseUnsupportedMediaType, ct).ConfigureAwait(false);
+                        return;
+                    }
+
+                    // Validate Content-Encoding against the decoder registry.
+                    // The token parsed fine, but the decoder may not be
+                    // registered (not implemented yet, or disabled in config).
+                    if (!_decoders.TryGet(contentEncoding, out _))
+                    {
+                        await WriteAndCloseAsync(output, ResponseUnsupportedMediaType, ct).ConfigureAwait(false);
+                        return;
+                    }
+
+                    if (contentLength < 0 || contentLength > _maxBodySize)
                     {
                         await WriteAndCloseAsync(output, ResponsePayloadTooLarge, ct).ConfigureAwait(false);
                         return;
@@ -122,7 +167,7 @@ public sealed class StreamConnectionHandler : ConnectionHandler
                     var payload = TelemetryBatchPool.Rent(contentLength);
                     payload.NodeId = nodeId;
                     payload.Environment = environment;
-                    payload.IsCompressed = isCompressed;
+                    payload.ContentEncoding = contentEncoding;
 
                     ReadOnlySequence<byte> bodySequence = buffer.Slice(headersLength, contentLength);
                     bodySequence.CopyTo(payload.Array.AsSpan(0, contentLength));
@@ -178,38 +223,45 @@ public sealed class StreamConnectionHandler : ConnectionHandler
     }
 
     /// <summary>
+    /// Outcome of <c>Content-Encoding</c> parsing.
+    /// </summary>
+    private enum EncodingParseResult
+    {
+        /// <summary>
+        /// Token is recognized, or the header is absent (which maps to
+        /// <see cref="ContentEncoding.Identity"/>).
+        /// </summary>
+        Ok,
+
+        /// <summary>
+        /// Token is not recognized, or the header carries multiple values
+        /// (e.g. <c>"gzip, br"</c>). Response: 415.
+        /// </summary>
+        Unsupported,
+
+        /// <summary>
+        /// Header value is empty or otherwise malformed. Response: 400.
+        /// </summary>
+        Malformed
+    }
+
+    /// <summary>
     /// Parses the full set of headers for the first request of a session.
     /// </summary>
-    /// <param name="buffer">Input buffer containing the request headers.</param>
-    /// <param name="headersLength">
-    /// Total length of the header block, including the terminating CRLFCRLF.
-    /// </param>
-    /// <param name="contentLength">Value of the <c>Content-Length</c> header.</param>
-    /// <param name="isCompressed">
-    /// <see langword="true"/> if <c>Content-Encoding</c> indicates compression.
-    /// </param>
-    /// <param name="nodeId">Value of the <c>X-Node-Id</c> header, or <c>unknown</c>.</param>
-    /// <param name="environment">
-    /// Value of the <c>X-Environment</c> header, or <c>unknown</c>.
-    /// </param>
-    /// <param name="status">Parsing outcome.</param>
-    /// <returns>
-    /// <see langword="true"/> if the header block has been fully parsed
-    /// (successfully or with a failure status); <see langword="false"/> if
-    /// more data is required.
-    /// </returns>
     private static bool TryParseFullHeaders(
         ReadOnlySequence<byte> buffer,
         out int headersLength,
         out int contentLength,
-        out bool isCompressed,
+        out ContentEncoding contentEncoding,
+        out EncodingParseResult encodingResult,
         out string nodeId,
         out string environment,
         out HeaderStatus status)
     {
         headersLength = 0;
         contentLength = -1;
-        isCompressed = false;
+        contentEncoding = ContentEncoding.Identity;
+        encodingResult = EncodingParseResult.Ok;
         nodeId = "unknown";
         environment = "unknown";
         status = HeaderStatus.Ok;
@@ -234,7 +286,8 @@ public sealed class StreamConnectionHandler : ConnectionHandler
             return true;
         }
 
-        if (!ParseAllHeaderLines(headersSeq, ref contentLength, ref isCompressed, ref nodeId, ref environment))
+        if (!ParseAllHeaderLines(headersSeq, ref contentLength, ref contentEncoding,
+                ref encodingResult, ref nodeId, ref environment))
         {
             status = HeaderStatus.Failed;
             return true;
@@ -246,33 +299,20 @@ public sealed class StreamConnectionHandler : ConnectionHandler
 
     /// <summary>
     /// Parses only <c>Content-Length</c> and <c>Content-Encoding</c> for
-    /// keep-alive requests. <c>NodeId</c> / <c>Environment</c> are already
-    /// captured for the session.
+    /// keep-alive requests.
     /// </summary>
-    /// <param name="buffer">Input buffer containing the request headers.</param>
-    /// <param name="headersLength">
-    /// Total length of the header block, including the terminating CRLFCRLF.
-    /// </param>
-    /// <param name="contentLength">Value of the <c>Content-Length</c> header.</param>
-    /// <param name="isCompressed">
-    /// <see langword="true"/> if <c>Content-Encoding</c> indicates compression.
-    /// </param>
-    /// <param name="status">Parsing outcome.</param>
-    /// <returns>
-    /// <see langword="true"/> if the header block has been fully parsed
-    /// (successfully or with a failure status); <see langword="false"/> if
-    /// more data is required.
-    /// </returns>
     private static bool TryParseContentLengthAndEncoding(
         ReadOnlySequence<byte> buffer,
         out int headersLength,
         out int contentLength,
-        out bool isCompressed,
+        out ContentEncoding contentEncoding,
+        out EncodingParseResult encodingResult,
         out HeaderStatus status)
     {
         headersLength = 0;
         contentLength = -1;
-        isCompressed = false;
+        contentEncoding = ContentEncoding.Identity;
+        encodingResult = EncodingParseResult.Ok;
         status = HeaderStatus.Ok;
 
         if (buffer.Length > MaxHeaderBytes && !ContainsEndOfHeaders(buffer))
@@ -321,7 +361,12 @@ public sealed class StreamConnectionHandler : ConnectionHandler
 
             if (TryMatchHeader(line, EncodingHeader, scratch, out int ceLen))
             {
-                isCompressed = IsCompressedEncoding(scratch.Slice(0, ceLen));
+                encodingResult = TryParseContentEncoding(scratch.Slice(0, ceLen), out contentEncoding);
+                if (encodingResult == EncodingParseResult.Malformed)
+                {
+                    status = HeaderStatus.Failed;
+                    return true;
+                }
                 continue;
             }
         }
@@ -330,24 +375,17 @@ public sealed class StreamConnectionHandler : ConnectionHandler
         return true;
     }
 
-    /// <summary>
-    /// Returns <see langword="true"/> if the buffer contains the
-    /// end-of-headers delimiter (<c>\r\n\r\n</c>).
-    /// </summary>
     private static bool ContainsEndOfHeaders(ReadOnlySequence<byte> buffer)
     {
         var r = new SequenceReader<byte>(buffer);
         return r.TryReadTo(out ReadOnlySequence<byte> _, EndOfHeaders, advancePastDelimiter: true);
     }
 
-    /// <summary>
-    /// Iterates over individual header lines and fills the supplied
-    /// references with parsed values.
-    /// </summary>
     private static bool ParseAllHeaderLines(
         ReadOnlySequence<byte> headers,
         ref int contentLength,
-        ref bool isCompressed,
+        ref ContentEncoding contentEncoding,
+        ref EncodingParseResult encodingResult,
         ref string nodeId,
         ref string environment)
     {
@@ -372,7 +410,9 @@ public sealed class StreamConnectionHandler : ConnectionHandler
 
             if (TryMatchHeader(line, EncodingHeader, scratch, out int ceLen))
             {
-                isCompressed = IsCompressedEncoding(scratch.Slice(0, ceLen));
+                encodingResult = TryParseContentEncoding(scratch.Slice(0, ceLen), out contentEncoding);
+                if (encodingResult == EncodingParseResult.Malformed)
+                    return false;
                 continue;
             }
 
@@ -393,17 +433,38 @@ public sealed class StreamConnectionHandler : ConnectionHandler
     }
 
     /// <summary>
-    /// Recognizes <c>Content-Encoding: br</c>, <c>gzip</c>, or <c>deflate</c>
-    /// as compression.
+    /// Parses the <c>Content-Encoding</c> header value into a
+    /// <see cref="ContentEncoding"/>.
     /// </summary>
-    private static bool IsCompressedEncoding(ReadOnlySpan<byte> value)
+    /// <returns>
+    /// <see cref="EncodingParseResult.Ok"/> if the token is recognized,
+    /// <see cref="EncodingParseResult.Unsupported"/> for unknown or
+    /// multi-value headers (e.g. <c>"gzip, br"</c>),
+    /// <see cref="EncodingParseResult.Malformed"/> for empty values.
+    /// </returns>
+    private static EncodingParseResult TryParseContentEncoding(
+        ReadOnlySpan<byte> value,
+        out ContentEncoding encoding)
     {
-        // "br", "gzip", "deflate" — all of them imply compression.
-        // Checking the first byte is enough: 'b', 'g', 'd' (case-insensitive).
-        if (value.IsEmpty) return false;
-        byte b = value[0];
-        if (b >= (byte)'A' && b <= (byte)'Z') b = (byte)(b + 32);
-        return b == (byte)'b' || b == (byte)'g' || b == (byte)'d';
+        encoding = ContentEncoding.Identity;
+
+        if (value.IsEmpty)
+            return EncodingParseResult.Malformed;
+
+        // ASCII-only header; decode to string is acceptable here because
+        // this path is not hot (once per request) and the value is short.
+        string token = Encoding.ASCII.GetString(value).Trim();
+
+        if (token.Length == 0)
+            return EncodingParseResult.Malformed;
+
+        // Multiple encodings (e.g. "gzip, br") are not supported.
+        if (token.IndexOf(',') >= 0)
+            return EncodingParseResult.Unsupported;
+
+        return ContentEncodingExtensions.TryParseToken(token, out encoding)
+            ? EncodingParseResult.Ok
+            : EncodingParseResult.Unsupported;
     }
 
     /// <summary>
@@ -411,10 +472,6 @@ public sealed class StreamConnectionHandler : ConnectionHandler
     /// beginning of <paramref name="line"/>, skips the following spaces,
     /// and copies the trimmed value into <paramref name="scratch"/>.
     /// </summary>
-    /// <param name="line">A single header line.</param>
-    /// <param name="headerName">Header name to match (lowercase).</param>
-    /// <param name="scratch">Scratch buffer that receives the header value.</param>
-    /// <param name="valueLength">Length of the value stored in <paramref name="scratch"/>.</param>
     private static bool TryMatchHeader(
         ReadOnlySequence<byte> line,
         ReadOnlySpan<byte> headerName,
@@ -468,10 +525,6 @@ public sealed class StreamConnectionHandler : ConnectionHandler
         return true;
     }
 
-    /// <summary>
-    /// Returns <see langword="true"/> if <paramref name="sequence"/> starts
-    /// with <paramref name="prefix"/>. Supports prefixes up to 16 bytes.
-    /// </summary>
     private static bool SequenceStartsWith(ReadOnlySequence<byte> sequence, ReadOnlySpan<byte> prefix)
     {
         if (sequence.Length < prefix.Length) return false;
@@ -481,19 +534,12 @@ public sealed class StreamConnectionHandler : ConnectionHandler
         return scratch.Slice(0, prefix.Length).SequenceEqual(prefix);
     }
 
-    /// <summary>
-    /// Writes a fixed response to the output pipe and flushes it.
-    /// </summary>
     private static async ValueTask WriteAsync(PipeWriter output, ReadOnlyMemory<byte> bytes, CancellationToken ct)
     {
         await output.WriteAsync(bytes, ct).ConfigureAwait(false);
         await output.FlushAsync(ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Best-effort write of a fixed response followed by a flush; swallows
-    /// any I/O errors because it runs on the connection-shutdown path.
-    /// </summary>
     private static async ValueTask WriteAndCloseAsync(PipeWriter output, ReadOnlyMemory<byte> bytes, CancellationToken ct)
     {
         try
