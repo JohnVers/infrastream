@@ -26,11 +26,6 @@ InfraStream is under active development.
 - **Static intern cache** for well-known tokens only (log levels and a few
   component names).
 
-## Lifecycle
-
-- **No graceful shutdown yet.** In-flight batches may be dropped on
-  termination. Planned for a future release.
-
 ## Operations
 
 - **Management endpoints** are available on the management port

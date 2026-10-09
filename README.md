@@ -92,6 +92,10 @@ scaling, and capacity examples.
 - **Zero-allocation JSON parsing** via `Utf8JsonReader`.
 - **Bounded channel with backpressure** — when workers cannot keep up,
   the kernel shrinks the TCP window instead of buffering without limit.
+- **Graceful shutdown** — on SIGTERM, the ingress queue is completed and
+  workers drain remaining payloads before exit. New requests during
+  shutdown receive `503 Service Unavailable`. Bounded by the host
+  shutdown timeout (default 30 s).
 - **Fluent API + DI integration** — `AddCollectorEngine()`,
   `AddNullExporter()`, `AddConsoleExporter()`, `AddOpenTelemetryExporter()`,
   `AddKafkaExporter()`, `AddCustomExporter<T>()`.

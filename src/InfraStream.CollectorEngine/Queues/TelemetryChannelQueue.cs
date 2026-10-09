@@ -20,6 +20,11 @@ namespace InfraStream.CollectorEngine.Queues;
 ///         (<see cref="BoundedChannelFullMode.Wait"/>).</item>
 /// </list>
 /// </para>
+/// <para>
+/// On shutdown, <see cref="Complete"/> is called once to stop accepting
+/// new payloads. Workers drain the remaining payloads and exit when the
+/// channel is empty.
+/// </para>
 /// </remarks>
 public sealed class TelemetryChannelQueue
 {
@@ -44,6 +49,11 @@ public sealed class TelemetryChannelQueue
     /// Number of payloads currently waiting in the channel.
     /// </summary>
     public int Count => _channel.Reader.Count;
+
+    /// <summary>
+    /// <see langword="true"/> once <see cref="Complete"/> has been called.
+    /// </summary>
+    public bool IsCompleted => _channel.Reader.Completion.IsCompleted;
 
     /// <summary>
     /// Initializes a new instance of the
@@ -73,4 +83,13 @@ public sealed class TelemetryChannelQueue
 
         _channel = Channel.CreateBounded<TelemetryBatchPayload>(options);
     }
+
+    /// <summary>
+    /// Stops accepting new payloads. Workers continue to drain whatever is
+    /// already in the channel, then exit.
+    /// </summary>
+    /// <remarks>
+    /// Idempotent: subsequent calls are no-ops.
+    /// </remarks>
+    public void Complete() => _channel.Writer.TryComplete();
 }

@@ -61,7 +61,7 @@ public static class CollectorEngineExtensions
         int resolvedQueueCapacity = queueCapacity ?? options.QueueCapacity;
 
         int resolvedWorkerCount = workerCount
-            ?? (options.WorkerCount > 0 ? options.WorkerCount : 0);
+                                  ?? (options.WorkerCount > 0 ? options.WorkerCount : 0);
         if (resolvedWorkerCount <= 0)
             resolvedWorkerCount = Math.Max(1, Environment.ProcessorCount);
 
@@ -113,6 +113,27 @@ public static class CollectorEngineExtensions
             return new WorkerMetricsReporter(registry, logger);
         });
 
+
+        // Graceful shutdown: stop accepting new payloads as soon as the host
+        // begins stopping. Workers drain the remaining payloads and exit.
+        builder.Services.AddSingleton<IHostedService>(sp =>
+        {
+            var queue = sp.GetRequiredService<TelemetryChannelQueue>();
+            var lifetime = sp.GetRequiredService<IHostApplicationLifetime>();
+            var logger = sp.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("GracefulShutdown");
+
+            lifetime.ApplicationStopping.Register(() =>
+            {
+                logger.LogInformation(
+                    "Shutdown started. Completing ingress queue. Pending batches={Pending}",
+                    queue.Count);
+                queue.Complete();
+            });
+
+            return new NoopHostedService();
+        });
+
         // 9. Kestrel: management HTTP + ingress raw TCP.
         builder.WebHost.ConfigureKestrel(kestrelOptions =>
         {
@@ -134,5 +155,11 @@ public static class CollectorEngineExtensions
             QueueCapacity: resolvedQueueCapacity));
 
         return new CollectorEngineBuilder(builder);
+    }
+
+    private sealed class NoopHostedService : IHostedService
+    {
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using InfraStream.CollectorEngine.Ingress;
 using InfraStream.CollectorEngine.Queues;
 using Microsoft.Extensions.Options;
@@ -28,6 +29,11 @@ namespace InfraStream.CollectorEngine.Networking;
 /// value) are rejected with <c>400 Bad Request</c>. Decoding itself happens
 /// later, in the worker.
 /// </para>
+/// <para>
+/// During graceful shutdown the queue is completed, and any new payload
+/// is rejected with <c>503 Service Unavailable</c>. In-flight requests
+/// that were accepted before the queue closed are still processed.
+/// </para>
 /// </remarks>
 public sealed class StreamConnectionHandler : ConnectionHandler
 {
@@ -49,6 +55,8 @@ public sealed class StreamConnectionHandler : ConnectionHandler
         "HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray();
     private static readonly byte[] ResponseUnsupportedMediaType =
         "HTTP/1.1 415 Unsupported Media Type\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray();
+    private static readonly byte[] ResponseServiceUnavailable =
+        "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray();
 
     private readonly TelemetryChannelQueue _queue;
     private readonly ContentDecoderRegistry _decoders;
@@ -163,6 +171,14 @@ public sealed class StreamConnectionHandler : ConnectionHandler
                         continue;
                     }
 
+                    // Fast-fail if shutdown has already closed the queue.
+                    // This avoids renting a payload that cannot be enqueued.
+                    if (_queue.IsCompleted)
+                    {
+                        await WriteAndCloseAsync(output, ResponseServiceUnavailable, ct).ConfigureAwait(false);
+                        return;
+                    }
+
                     // Copy the body into a pooled payload.
                     var payload = TelemetryBatchPool.Rent(contentLength);
                     payload.NodeId = nodeId;
@@ -179,6 +195,14 @@ public sealed class StreamConnectionHandler : ConnectionHandler
                         try
                         {
                             await _queue.Writer.WriteAsync(payload, ct).ConfigureAwait(false);
+                        }
+                        catch (ChannelClosedException)
+                        {
+                            // Queue completed between the fast check and the
+                            // async write: shutdown in progress.
+                            payload.Dispose();
+                            await WriteAndCloseAsync(output, ResponseServiceUnavailable, ct).ConfigureAwait(false);
+                            return;
                         }
                         catch
                         {
@@ -245,9 +269,6 @@ public sealed class StreamConnectionHandler : ConnectionHandler
         Malformed
     }
 
-    /// <summary>
-    /// Parses the full set of headers for the first request of a session.
-    /// </summary>
     private static bool TryParseFullHeaders(
         ReadOnlySequence<byte> buffer,
         out int headersLength,
@@ -297,10 +318,6 @@ public sealed class StreamConnectionHandler : ConnectionHandler
         return true;
     }
 
-    /// <summary>
-    /// Parses only <c>Content-Length</c> and <c>Content-Encoding</c> for
-    /// keep-alive requests.
-    /// </summary>
     private static bool TryParseContentLengthAndEncoding(
         ReadOnlySequence<byte> buffer,
         out int headersLength,
@@ -391,7 +408,6 @@ public sealed class StreamConnectionHandler : ConnectionHandler
     {
         var reader = new SequenceReader<byte>(headers);
 
-        // Skip the request line ("POST /... HTTP/1.1").
         if (!reader.TryReadTo(out ReadOnlySequence<byte> _, "\r\n"u8, advancePastDelimiter: true))
             return false;
 
@@ -432,16 +448,6 @@ public sealed class StreamConnectionHandler : ConnectionHandler
         return true;
     }
 
-    /// <summary>
-    /// Parses the <c>Content-Encoding</c> header value into a
-    /// <see cref="ContentEncoding"/>.
-    /// </summary>
-    /// <returns>
-    /// <see cref="EncodingParseResult.Ok"/> if the token is recognized,
-    /// <see cref="EncodingParseResult.Unsupported"/> for unknown or
-    /// multi-value headers (e.g. <c>"gzip, br"</c>),
-    /// <see cref="EncodingParseResult.Malformed"/> for empty values.
-    /// </returns>
     private static EncodingParseResult TryParseContentEncoding(
         ReadOnlySpan<byte> value,
         out ContentEncoding encoding)
@@ -451,14 +457,11 @@ public sealed class StreamConnectionHandler : ConnectionHandler
         if (value.IsEmpty)
             return EncodingParseResult.Malformed;
 
-        // ASCII-only header; decode to string is acceptable here because
-        // this path is not hot (once per request) and the value is short.
         string token = Encoding.ASCII.GetString(value).Trim();
 
         if (token.Length == 0)
             return EncodingParseResult.Malformed;
 
-        // Multiple encodings (e.g. "gzip, br") are not supported.
         if (token.IndexOf(',') >= 0)
             return EncodingParseResult.Unsupported;
 
@@ -467,11 +470,6 @@ public sealed class StreamConnectionHandler : ConnectionHandler
             : EncodingParseResult.Unsupported;
     }
 
-    /// <summary>
-    /// Case-insensitively matches <paramref name="headerName"/> at the
-    /// beginning of <paramref name="line"/>, skips the following spaces,
-    /// and copies the trimmed value into <paramref name="scratch"/>.
-    /// </summary>
     private static bool TryMatchHeader(
         ReadOnlySequence<byte> line,
         ReadOnlySpan<byte> headerName,

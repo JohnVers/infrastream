@@ -23,11 +23,10 @@ namespace InfraStream.CollectorEngine.BackgroundServices;
 /// </list>
 /// </para>
 /// <para>
-/// Counters are updated with <see cref="Interlocked"/> on the hot path
-/// (two atomic operations per batch, negligible at expected rates) and
-/// are read by <see cref="WorkerMetricsReporter"/>. No per-iteration
-/// metrics are written to the log; only the periodic reporter and the
-/// final "stopped" line emit data.
+/// The worker drains the channel until it is completed and empty, or until
+/// the shutdown timeout elapses. The hot path is clean: no <c>Stopwatch</c>,
+/// no per-iteration metrics. Counters are read by
+/// <see cref="WorkerMetricsReporter"/>.
 /// </para>
 /// </remarks>
 public sealed class TelemetryProcessorWorker
@@ -48,15 +47,6 @@ public sealed class TelemetryProcessorWorker
     /// Initializes a new instance of the
     /// <see cref="TelemetryProcessorWorker"/> class.
     /// </summary>
-    /// <param name="queue">Shared bounded channel with incoming payloads.</param>
-    /// <param name="processors">Processors applied to every parsed item.</param>
-    /// <param name="exporters">Exporters that receive accepted items.</param>
-    /// <param name="decoders">Registry of content decoders.</param>
-    /// <param name="ingressOptions">Ingress configuration (buffer size).</param>
-    /// <param name="logger">Logger used for lifecycle and error events.</param>
-    /// <param name="workerIndex">
-    /// Zero-based index of this worker, used for log correlation.
-    /// </param>
     public TelemetryProcessorWorker(
         TelemetryChannelQueue queue,
         ITelemetryProcessor[] processors,
@@ -88,10 +78,16 @@ public sealed class TelemetryProcessorWorker
     public long Errors => Interlocked.Read(ref _errors);
 
     /// <summary>
-    /// Runs the worker loop until <paramref name="stoppingToken"/> is
-    /// signaled.
+    /// Runs the worker loop until the channel is completed and drained,
+    /// or until <paramref name="stoppingToken"/> is signaled.
     /// </summary>
-    /// <param name="stoppingToken">Token used to stop the worker.</param>
+    /// <remarks>
+    /// The loop does not exit on <paramref name="stoppingToken"/> alone:
+    /// remaining payloads in the channel are processed first. The token is
+    /// only observed while waiting for new payloads; if it fires while the
+    /// queue is non-empty, the loop continues to drain.
+    /// </remarks>
+    /// <param name="stoppingToken">Token used to force-stop the worker.</param>
     public async Task RunAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Worker {Index} started.", _workerIndex);
@@ -100,78 +96,31 @@ public sealed class TelemetryProcessorWorker
 
         try
         {
-            await foreach (var payload in _queue.Reader.ReadAllAsync(stoppingToken).ConfigureAwait(false))
+            while (!_queue.IsCompleted || _queue.Count > 0)
             {
-                try
+                // Wait for data, completion, or forced stop.
+                if (!_queue.Reader.TryRead(out var payload))
                 {
-                    if (payload.Length == 0)
-                        continue;
-
-                    byte[] parseBuffer;
-                    int parseLength;
-
-                    if (payload.ContentEncoding == ContentEncoding.Identity)
+                    try
                     {
-                        // Uncompressed: parse in place.
-                        parseBuffer = payload.Array;
-                        parseLength = payload.Length;
+                        // WaitToReadAsync returns false when the channel is
+                        // completed and empty. Cancellation forces exit only
+                        // when the queue is already empty (checked above).
+                        if (!await _queue.Reader.WaitToReadAsync(stoppingToken).ConfigureAwait(false))
+                            break;
                     }
-                    else
+                    catch (OperationCanceledException)
                     {
-                        if (!_decoders.TryGet(payload.ContentEncoding, out var decoder))
-                        {
-                            // Should be unreachable: the handler rejects
-                            // unsupported encodings with 415 before enqueue.
-                            Interlocked.Increment(ref _errors);
-                            _logger.LogWarning(
-                                "Worker {Index}: no decoder for encoding {Encoding}. NodeId={NodeId}, Len={Len}",
-                                _workerIndex, payload.ContentEncoding, payload.NodeId, payload.Length);
-                            continue;
-                        }
-
-                        int bytesWritten;
-                        try
-                        {
-                            bytesWritten = decoder.Decode(payload.Memory, decompressedBuffer.AsSpan());
-                        }
-                        catch (InvalidDataException ex)
-                        {
-                            Interlocked.Increment(ref _errors);
-                            _logger.LogWarning(ex,
-                                "Worker {Index}: malformed payload. Encoding={Encoding}, NodeId={NodeId}, Len={Len}",
-                                _workerIndex, payload.ContentEncoding, payload.NodeId, payload.Length);
-                            continue;
-                        }
-
-                        parseBuffer = decompressedBuffer;
-                        parseLength = bytesWritten;
+                        // Force-stop requested; exit even if data remains.
+                        break;
                     }
 
-                    var dispatcher = new EnginePipelineDispatcher(
-                        _processors, _exporters, payload.NodeId, payload.Environment);
+                    continue;
+                }
 
-                    TelemetryBatchParser.Parse(
-                        parseBuffer,
-                        parseLength,
-                        ref dispatcher);
-
-                    Interlocked.Add(ref _itemsProcessed, dispatcher.Count);
-                    Interlocked.Increment(ref _batchesProcessed);
-                }
-                catch (Exception ex)
-                {
-                    Interlocked.Increment(ref _errors);
-                    _logger.LogError(ex,
-                        "Worker {Index}: error processing batch. NodeId={NodeId}, Len={Len}",
-                        _workerIndex, payload.NodeId, payload.Length);
-                }
-                finally
-                {
-                    payload.Dispose();
-                }
+                ProcessPayload(payload, decompressedBuffer);
             }
         }
-        catch (OperationCanceledException) { }
         finally
         {
             ArrayPool<byte>.Shared.Return(decompressedBuffer);
@@ -182,6 +131,74 @@ public sealed class TelemetryProcessorWorker
                 BatchesProcessed,
                 ItemsProcessed,
                 Errors);
+        }
+    }
+
+    private void ProcessPayload(TelemetryBatchPayload payload, byte[] decompressedBuffer)
+    {
+        try
+        {
+            if (payload.Length == 0)
+                return;
+
+            byte[] parseBuffer;
+            int parseLength;
+
+            if (payload.ContentEncoding == ContentEncoding.Identity)
+            {
+                parseBuffer = payload.Array;
+                parseLength = payload.Length;
+            }
+            else
+            {
+                if (!_decoders.TryGet(payload.ContentEncoding, out var decoder))
+                {
+                    Interlocked.Increment(ref _errors);
+                    _logger.LogWarning(
+                        "Worker {Index}: no decoder for encoding {Encoding}. NodeId={NodeId}, Len={Len}",
+                        _workerIndex, payload.ContentEncoding, payload.NodeId, payload.Length);
+                    return;
+                }
+
+                int bytesWritten;
+                try
+                {
+                    bytesWritten = decoder.Decode(payload.Memory, decompressedBuffer.AsSpan());
+                }
+                catch (InvalidDataException ex)
+                {
+                    Interlocked.Increment(ref _errors);
+                    _logger.LogWarning(ex,
+                        "Worker {Index}: malformed payload. Encoding={Encoding}, NodeId={NodeId}, Len={Len}",
+                        _workerIndex, payload.ContentEncoding, payload.NodeId, payload.Length);
+                    return;
+                }
+
+                parseBuffer = decompressedBuffer;
+                parseLength = bytesWritten;
+            }
+
+            var dispatcher = new EnginePipelineDispatcher(
+                _processors, _exporters, payload.NodeId, payload.Environment);
+
+            TelemetryBatchParser.Parse(
+                parseBuffer,
+                parseLength,
+                ref dispatcher);
+
+            Interlocked.Add(ref _itemsProcessed, dispatcher.Count);
+            Interlocked.Increment(ref _batchesProcessed);
+        }
+        catch (Exception ex)
+        {
+            Interlocked.Increment(ref _errors);
+            _logger.LogError(ex,
+                "Worker {Index}: error processing batch. NodeId={NodeId}, Len={Len}",
+                _workerIndex, payload.NodeId, payload.Length);
+        }
+        finally
+        {
+            payload.Dispose();
         }
     }
 }
