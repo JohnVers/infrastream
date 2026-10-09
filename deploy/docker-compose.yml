@@ -20,6 +20,10 @@ services:
       - InfraStream__QueueCapacity=${QUEUE_CAPACITY:-64}
       - InfraStream__Ingress__MaxBodySize=${MAX_BODY_SIZE:-1048576}
 
+      # ---- Logging ----
+      # Silence InfraStream logs entirely: INFA_LOG_LEVEL=None docker compose up
+      - Logging__LogLevel__InfraStream=${INFA_LOG_LEVEL:-Information}
+
       # ---- .NET runtime tuning ----
       - DOTNET_gcServer=1
       - DOTNET_GCLatencyMode=3

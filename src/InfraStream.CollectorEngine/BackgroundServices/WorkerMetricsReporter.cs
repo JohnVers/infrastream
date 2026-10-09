@@ -1,6 +1,5 @@
 using System.Diagnostics;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
+using InfraStream.CollectorEngine.Logging;
 
 namespace InfraStream.CollectorEngine.BackgroundServices;
 
@@ -26,9 +25,9 @@ namespace InfraStream.CollectorEngine.BackgroundServices;
 /// as a percentage of <see cref="Environment.ProcessorCount"/>.
 /// </para>
 /// <para>
-/// This service will be superseded by a proper <c>/metrics</c> endpoint
-/// (Prometheus) in a later phase. Until then, it is the cheapest way to
-/// observe runtime state without changing the hot path.
+/// All log messages use source-generated <see cref="LoggerMessageAttribute"/>
+/// delegates, so disabling them (e.g. via <c>Logging__LogLevel__InfraStream=None</c>)
+/// eliminates both the console output and the argument-boxing allocations.
 /// </para>
 /// </remarks>
 public sealed class WorkerMetricsReporter : BackgroundService
@@ -46,11 +45,6 @@ public sealed class WorkerMetricsReporter : BackgroundService
     /// <summary>
     /// Initializes a new instance of the <see cref="WorkerMetricsReporter"/> class.
     /// </summary>
-    /// <param name="registry">Registry of live workers.</param>
-    /// <param name="logger">Logger used for the metrics lines.</param>
-    /// <param name="interval">
-    /// Reporting interval. Defaults to 5 seconds when null.
-    /// </param>
     public WorkerMetricsReporter(
         WorkerRegistry registry,
         ILogger<WorkerMetricsReporter> logger,
@@ -65,8 +59,8 @@ public sealed class WorkerMetricsReporter : BackgroundService
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation(
-            "metrics: reporter started. ProcessorCount={ProcessorCount}, DotnetProcessorCountEnv={EnvValue}",
+        MetricsLog.ReporterStarted(
+            _logger,
             Environment.ProcessorCount,
             Environment.GetEnvironmentVariable("DOTNET_PROCESSOR_COUNT") ?? "(unset)");
 
@@ -112,8 +106,8 @@ public sealed class WorkerMetricsReporter : BackgroundService
 
                     previousWorkers[index] = new WorkerSample(batches, items, nowTicks);
 
-                    _logger.LogInformation(
-                        "metrics worker={Index} rss={Rss}MB managed={Managed}MB cpu={Cpu:F0}% batches/s={BatchesPerSec:F0} items/s={ItemsPerSec:F0} errors={Errors}",
+                    MetricsLog.WorkerMetrics(
+                        _logger,
                         index,
                         rssMb,
                         managedMb,
@@ -143,8 +137,8 @@ public sealed class WorkerMetricsReporter : BackgroundService
 
                 _prevTotalSample = (totalBatches, totalItems, nowTicks);
 
-                _logger.LogInformation(
-                    "metrics total workers={Workers} rss={Rss}MB managed={Managed}MB cpu={Cpu:F0}% batches/s={BatchesPerSec:F0} items/s={ItemsPerSec:F0} errors={Errors}",
+                MetricsLog.TotalMetrics(
+                    _logger,
                     workerCount,
                     rssMb,
                     managedMb,
@@ -199,6 +193,7 @@ public sealed class WorkerMetricsReporter : BackgroundService
         _prevCpuSample = (cpuNow, nowTicks);
         return cpuPercent;
     }
+
 
     private readonly record struct WorkerSample(long Batches, long Items, long TimestampTicks);
 }

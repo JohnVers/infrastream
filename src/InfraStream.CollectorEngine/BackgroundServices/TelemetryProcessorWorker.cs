@@ -1,6 +1,7 @@
 using InfraStream.Core.Exporters;
 using InfraStream.Core.Plugins;
 using InfraStream.CollectorEngine.Ingress;
+using InfraStream.CollectorEngine.Logging;
 using InfraStream.CollectorEngine.Parsing;
 using InfraStream.CollectorEngine.Queues;
 using Microsoft.Extensions.Options;
@@ -25,8 +26,10 @@ namespace InfraStream.CollectorEngine.BackgroundServices;
 /// <para>
 /// The worker drains the channel until it is completed and empty, or until
 /// the shutdown timeout elapses. The hot path is clean: no <c>Stopwatch</c>,
-/// no per-iteration metrics. Counters are read by
-/// <see cref="WorkerMetricsReporter"/>.
+/// no per-iteration metrics. All log messages use source-generated
+/// <see cref="LoggerMessageAttribute"/> delegates, so disabling them
+/// (e.g. via <c>Logging__LogLevel__InfraStream=None</c>) eliminates both
+/// the console output and the argument-boxing allocations.
 /// </para>
 /// </remarks>
 public sealed class TelemetryProcessorWorker
@@ -90,7 +93,7 @@ public sealed class TelemetryProcessorWorker
     /// <param name="stoppingToken">Token used to force-stop the worker.</param>
     public async Task RunAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Worker {Index} started.", _workerIndex);
+        WorkerLog.Started(_logger, _workerIndex);
 
         byte[] decompressedBuffer = ArrayPool<byte>.Shared.Rent(_decompressedBufferSize);
 
@@ -124,13 +127,7 @@ public sealed class TelemetryProcessorWorker
         finally
         {
             ArrayPool<byte>.Shared.Return(decompressedBuffer);
-
-            _logger.LogInformation(
-                "Worker {Index} stopped. Batches={Batches}, Items={Items}, Errors={Errors}",
-                _workerIndex,
-                BatchesProcessed,
-                ItemsProcessed,
-                Errors);
+            WorkerLog.Stopped(_logger, _workerIndex, BatchesProcessed, ItemsProcessed, Errors);
         }
     }
 
@@ -154,9 +151,7 @@ public sealed class TelemetryProcessorWorker
                 if (!_decoders.TryGet(payload.ContentEncoding, out var decoder))
                 {
                     Interlocked.Increment(ref _errors);
-                    _logger.LogWarning(
-                        "Worker {Index}: no decoder for encoding {Encoding}. NodeId={NodeId}, Len={Len}",
-                        _workerIndex, payload.ContentEncoding, payload.NodeId, payload.Length);
+                    WorkerLog.NoDecoder(_logger, _workerIndex, payload.ContentEncoding, payload.NodeId, payload.Length);
                     return;
                 }
 
@@ -168,9 +163,8 @@ public sealed class TelemetryProcessorWorker
                 catch (InvalidDataException ex)
                 {
                     Interlocked.Increment(ref _errors);
-                    _logger.LogWarning(ex,
-                        "Worker {Index}: malformed payload. Encoding={Encoding}, NodeId={NodeId}, Len={Len}",
-                        _workerIndex, payload.ContentEncoding, payload.NodeId, payload.Length);
+                    WorkerLog.MalformedPayload(_logger, ex, _workerIndex, payload.ContentEncoding, payload.NodeId,
+                        payload.Length);
                     return;
                 }
 
@@ -192,9 +186,7 @@ public sealed class TelemetryProcessorWorker
         catch (Exception ex)
         {
             Interlocked.Increment(ref _errors);
-            _logger.LogError(ex,
-                "Worker {Index}: error processing batch. NodeId={NodeId}, Len={Len}",
-                _workerIndex, payload.NodeId, payload.Length);
+            WorkerLog.BatchProcessingError(_logger, ex, _workerIndex, payload.NodeId, payload.Length);
         }
         finally
         {

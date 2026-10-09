@@ -42,6 +42,17 @@ InfraStream is under active development.
 - **Only the Kafka exporter is implemented.** ClickHouse, S3, ElasticSearch,
   and OTLP are not available yet. Planned for a future release.
 
+## Logging
+
+- **Silencing.** All InfraStream log messages can be disabled via
+  `Logging__LogLevel__InfraStream=None` (or the `INFA_LOG_LEVEL=None`
+  shorthand in `docker-compose.yml`). Because all messages use
+  source-generated `[LoggerMessage]` delegates, disabled logs incur no
+  allocations and no formatting cost.
+- **No OTLP log export yet.** Logs are written to stdout/console only.
+  OpenTelemetry log export (e.g. to Grafana Loki) is planned for a future
+  release.
+
 ## Performance
 
 - **Performance numbers** in the README are measured with `NullExporter`

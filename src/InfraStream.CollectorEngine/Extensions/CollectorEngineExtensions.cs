@@ -2,6 +2,7 @@ using InfraStream.CollectorEngine.BackgroundServices;
 using InfraStream.CollectorEngine.Configuration;
 using InfraStream.CollectorEngine.Hosting;
 using InfraStream.CollectorEngine.Ingress;
+using InfraStream.CollectorEngine.Logging;
 using InfraStream.CollectorEngine.Networking;
 using InfraStream.CollectorEngine.Queues;
 using InfraStream.Core.Exporters;
@@ -87,7 +88,7 @@ public static class CollectorEngineExtensions
                 var decoders = sp.GetRequiredService<ContentDecoderRegistry>();
                 var ingressOptions = sp.GetRequiredService<IOptions<IngressOptions>>();
                 var logger = sp.GetRequiredService<ILoggerFactory>()
-                    .CreateLogger($"TelemetryProcessorWorker[{index}]");
+                    .CreateLogger($"InfraStream.CollectorEngine.TelemetryProcessorWorker[{index}]");
 
                 var worker = new TelemetryProcessorWorker(
                     sp.GetRequiredService<TelemetryChannelQueue>(),
@@ -114,6 +115,8 @@ public static class CollectorEngineExtensions
         });
 
 
+        // Внутри AddCollectorEngine, блок graceful shutdown:
+
         // Graceful shutdown: stop accepting new payloads as soon as the host
         // begins stopping. Workers drain the remaining payloads and exit.
         builder.Services.AddSingleton<IHostedService>(sp =>
@@ -121,13 +124,11 @@ public static class CollectorEngineExtensions
             var queue = sp.GetRequiredService<TelemetryChannelQueue>();
             var lifetime = sp.GetRequiredService<IHostApplicationLifetime>();
             var logger = sp.GetRequiredService<ILoggerFactory>()
-                .CreateLogger("GracefulShutdown");
+                .CreateLogger("InfraStream.CollectorEngine.GracefulShutdown");
 
             lifetime.ApplicationStopping.Register(() =>
             {
-                logger.LogInformation(
-                    "Shutdown started. Completing ingress queue. Pending batches={Pending}",
-                    queue.Count);
+                ShutdownLog.Started(logger, queue.Count);
                 queue.Complete();
             });
 
