@@ -97,6 +97,9 @@ scaling, and capacity examples.
   `AddKafkaExporter()`, `AddCustomExporter<T>()`.
 - **`appsettings.json` + env overrides** — standard ASP.NET Core
   configuration (`InfraStream__WorkerCount=4`, etc.).
+- **Management endpoints** on the management port (default `5002`):
+  `/health`, `/ready` for Kubernetes probes, and Prometheus `/metrics`
+  for scraping.
 
 ---
 

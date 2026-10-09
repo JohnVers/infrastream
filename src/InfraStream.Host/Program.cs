@@ -5,21 +5,16 @@ var builder = WebApplication.CreateBuilder(args);
 // Logging: Dev -> single-line console, Prod -> JSON.
 builder.AddInfraStreamLogging();
 
-// Collector Engine + exporters (fluent chain).
+// Collector Engine + exporters + management endpoints.
 builder.AddCollectorEngine()
-    .AddNullExporter();
+    .AddNullExporter()
+    .WithManagementEndpoints();
 
 var app = builder.Build();
 
-// Health endpoint.
+// Management endpoints: /health, /ready, /metrics.
 var config = app.Services.GetRequiredService<CollectorEngineConfig>();
-
-app.MapGet("/health", () => Results.Ok(new
-{
-    status = "healthy",
-    timestamp = DateTime.UtcNow,
-    workerCount = config.WorkerCount
-}));
+app.MapCollectorEngineEndpoints(config.ManagementPort);
 
 // Startup log.
 app.Logger.LogInformation(

@@ -33,7 +33,14 @@ InfraStream is under active development.
 
 ## Operations
 
-- **No `/metrics` or `/ready` endpoints yet.** Planned for a future release.
+- **Management endpoints** are available on the management port
+  (default `5002`): `/health`, `/ready`, and Prometheus `/metrics`.
+- **No authentication** on the management port yet. Planned for a future
+  release.
+- **`/ready` reflects worker registration**, not in-flight queue state.
+  A gateway with a full queue and zero free workers will still report
+  ready. This is intentional for the current version; queue-aware
+  readiness is future work.
 
 ## Exporters
 

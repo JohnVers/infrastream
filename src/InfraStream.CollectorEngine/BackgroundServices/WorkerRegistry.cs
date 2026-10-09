@@ -4,8 +4,8 @@ namespace InfraStream.CollectorEngine.BackgroundServices;
 
 /// <summary>
 /// Registry of all <see cref="TelemetryProcessorWorker"/> instances created
-/// for this process. Used by <see cref="WorkerMetricsReporter"/> to read
-/// per-worker counters.
+/// for this process. Used by <see cref="WorkerMetricsReporter"/> and
+/// <c>InfraStreamMetrics</c> to read per-worker counters.
 /// </summary>
 /// <remarks>
 /// Workers are created by the DI factory in <c>CollectorEngineExtensions</c>
@@ -28,6 +28,18 @@ public sealed class WorkerRegistry
             lock (_lock)
             {
                 return _workers.ToArray();
+            }
+        }
+    }
+
+    /// <summary>Number of registered workers.</summary>
+    public int WorkerCount
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _workers.Count;
             }
         }
     }

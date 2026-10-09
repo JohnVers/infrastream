@@ -1,32 +1,37 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-    <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
-        <ImplicitUsings>enable</ImplicitUsings>
-        <Nullable>enable</Nullable>
-        <OutputType>Library</OutputType>
-        <IsPackable>true</IsPackable>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <OutputType>Library</OutputType>
+    <IsPackable>true</IsPackable>
 
-        <!-- NuGet metadata. -->
-        <PackageId>InfraStream.CollectorEngine</PackageId>
-        <Version>0.1.0</Version>
-        <Authors>InfraStream</Authors>
-        <Description>High-performance edge gateway for telemetry ingestion.</Description>
-        <PackageTags>telemetry;logs;gateway;high-performance;zero-alloc</PackageTags>
+    <!-- NuGet metadata. -->
+    <PackageId>InfraStream.CollectorEngine</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>InfraStream</Authors>
+    <Description>High-performance edge gateway for telemetry ingestion.</Description>
+    <PackageTags>telemetry;logs;gateway;high-performance;zero-alloc</PackageTags>
 
-        <!-- Runtime GC settings (inherited by the host). -->
-        <ServerGarbageCollection>true</ServerGarbageCollection>
-        <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
-        <TieredPGO>true</TieredPGO>
-        <InvariantGlobalization>true</InvariantGlobalization>
-    </PropertyGroup>
+    <!-- Runtime GC settings (inherited by the host). -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
 
-    <ItemGroup>
-        <ProjectReference Include="..\InfraStream.Core\InfraStream.Core.csproj" />
-    </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\InfraStream.Core\InfraStream.Core.csproj"/>
+  </ItemGroup>
 
-    <ItemGroup>
-        <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App"/>
+
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="prometheus-net.AspNetCore"/>
+  </ItemGroup>
 
 </Project>
