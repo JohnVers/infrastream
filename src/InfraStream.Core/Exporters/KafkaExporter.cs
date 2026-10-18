@@ -55,8 +55,18 @@ public sealed class KafkaExporter : ITelemetryExporter, IDisposable
     public KafkaExporter(
         KafkaExporterOptions options,
         ILogger<KafkaExporter> logger)
-        : this(options, BuildProducer(options), logger)
+        : this(options, BuildValidatedProducer(options, logger), logger)
     {
+    }
+
+    private static IProducer<byte[], byte[]> BuildValidatedProducer(
+        KafkaExporterOptions options,
+        ILogger<KafkaExporter> logger)
+    {
+        // Validate logger BEFORE creating the producer, so that a null logger
+        // does not leave an orphaned Kafka producer connecting in the background.
+        ArgumentNullException.ThrowIfNull(logger);
+        return BuildProducer(options);
     }
 
     /// <summary>
