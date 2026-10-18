@@ -29,7 +29,7 @@ public class ReaderOnlyBenchmarks
             sb.Append("\"message\":\"User logged in successfully [req=abc12345] status=200 card=4111-1111-1111-1111 password=secret_token_123\",");
             sb.Append("\"component\":\"auth-service\",");
             sb.Append("\"trace_id\":\"").Append(Guid.NewGuid().ToString("N")).Append("\",");
-            sb.Append("\"span_id\":\"").Append(Guid.NewGuid().ToString("N").Substring(0, 16)).Append("\"}");
+            sb.Append("\"span_id\":\"").Append(Guid.NewGuid().ToString("N").AsSpan(0, 16)).Append("\"}");
         }
         sb.Append("]}");
 

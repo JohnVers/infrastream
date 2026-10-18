@@ -14,7 +14,7 @@ public class GetSliceBenchmarks
     // stub. Use ParserPhasesBenchmarks for the actual estimate.
 
     [Benchmark]
-    public int Noop()
+    public static int Noop()
     {
         return 0;
     }
