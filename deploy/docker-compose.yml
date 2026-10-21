@@ -7,7 +7,7 @@ services:
     ports:
       - "5005:5005"   # Http1 (ConnectionHandler or Kestrel)
       - "5006:5006"   # Http2
-      - "5007:5007"   # Grpc (future)
+      - "5007:5007"   # Grpc
       - "5002:5002"   # Management (health, ready, metrics)
     deploy:
       resources:
@@ -26,10 +26,13 @@ services:
       - InfraStream__Protocols__Http1__Enabled=${HTTP1_ENABLED:-true}
       - InfraStream__Protocols__Http1__Mode=${HTTP1_MODE:-ConnectionHandler}
       - InfraStream__Protocols__Http1__Port=${HTTP1_PORT:-0}
+      - InfraStream__Protocols__Http2__MaxStreamsPerConnection=${HTTP2_MAX_STREAMS:-100}
       - InfraStream__Protocols__Http2__Enabled=${HTTP2_ENABLED:-false}
       - InfraStream__Protocols__Http2__Port=${HTTP2_PORT:-5006}
       - InfraStream__Protocols__Grpc__Enabled=${GRPC_ENABLED:-false}
       - InfraStream__Protocols__Grpc__Port=${GRPC_PORT:-5007}
+      - InfraStream__Protocols__Grpc__MaxStreamsPerConnection=${GRPC_MAX_STREAMS:-100}
+      - InfraStream__Protocols__Grpc__MaxReceiveMessageSize=${GRPC_MAX_MESSAGE_SIZE:-4194304}
 
       # ---- Logging ----
       # Silence InfraStream logs entirely: INFA_LOG_LEVEL=None docker compose up

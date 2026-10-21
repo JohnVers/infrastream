@@ -1,7 +1,5 @@
 using InfraStream.CollectorEngine.Configuration;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace InfraStream.CollectorEngine.Ingress.Protocols;
 
@@ -10,6 +8,7 @@ namespace InfraStream.CollectorEngine.Ingress.Protocols;
 /// </summary>
 public sealed class GrpcIngressProtocol : IIngressProtocol
 {
+
     /// <inheritdoc />
     public string Name => "Grpc";
 
@@ -21,7 +20,7 @@ public sealed class GrpcIngressProtocol : IIngressProtocol
     {
         services.AddGrpc(o =>
         {
-            o.MaxReceiveMessageSize = 16 * 1024 * 1024;
+            o.MaxReceiveMessageSize = options.Protocols.Grpc.MaxReceiveMessageSize;
         });
         services.AddSingleton<IngestGrpcService>();
     }
@@ -30,8 +29,8 @@ public sealed class GrpcIngressProtocol : IIngressProtocol
     public void ConfigureListener(KestrelServerOptions kestrel, InfraStreamOptions options)
     {
         int port = Port(options);
-        // gRPC h2c: Http2-only (ALPN requires TLS for Http1AndHttp2).
-        // IPv4 wildcard — Docker network uses IPv4 addressing.
+        kestrel.Limits.Http2.MaxStreamsPerConnection =
+            options.Protocols.Grpc.MaxStreamsPerConnection;
         kestrel.Listen(System.Net.IPAddress.Any, port, lo =>
         {
             lo.Protocols = HttpProtocols.Http2;

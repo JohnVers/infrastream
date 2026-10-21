@@ -310,11 +310,16 @@ run_h2_test() {
   local load_url="http://infrastream_gateway:5006/api/v1/ingest"
   local max_body; if [ "$encoding" = "identity" ]; then max_body="4194304"; else max_body="1048576"; fi
 
+  # Raise HTTP/2 streams for batch=1 (high RPS, more copies than default 100).
+  local http2_max_streams
+  if [ "$batch" = "1" ]; then http2_max_streams=500; else http2_max_streams=100; fi
+
   echo ""
   echo -e "${BLUE}==========================================${NC}"
   echo -e "${BLUE}  Test: $name (HTTP/2, NBomber)${NC}"
   echo -e "${BLUE}  CPU: ${cpu}, MEM: ${mem}, Workers: ${workers}, GC: ${gc_limit}${NC}"
   echo -e "${BLUE}  Copies: ${copies}, Batch: ${batch}, Duration: ${duration}s, Encoding: ${encoding}${NC}"
+  echo -e "${BLUE}  MaxStreamsPerConnection: ${http2_max_streams}${NC}"
   echo -e "${BLUE}==========================================${NC}"
 
   docker compose down 2>/dev/null || true
@@ -322,7 +327,7 @@ run_h2_test() {
   GATEWAY_CPU="$cpu" GATEWAY_CPU_INT="$cpu_int" GATEWAY_MEMORY="$mem" \
   WORKER_COUNT="$workers" GC_HEAP_HARD_LIMIT="$gc_limit" MAX_BODY_SIZE="$max_body" \
   HTTP1_ENABLED=false HTTP2_ENABLED=true GRPC_ENABLED=false \
-  LOAD_PROTOCOL=http LOAD_HTTP2=true \
+  HTTP2_MAX_STREAMS="$http2_max_streams" \
     docker compose up --build -d --force-recreate infrastream_gateway
 
   if ! wait_healthy "infrastream_gateway" 60; then
@@ -388,11 +393,16 @@ run_grpc_test() {
   local load_url="http://infrastream_gateway:5007"
   local max_body="4194304"
 
+  # Raise HTTP/2 streams for batch=1 (high RPS, more copies than default 100).
+  local grpc_max_streams
+  if [ "$batch" = "1" ]; then grpc_max_streams=500; else grpc_max_streams=100; fi
+
   echo ""
   echo -e "${BLUE}==========================================${NC}"
   echo -e "${BLUE}  Test: $name (gRPC, NBomber, protobuf)${NC}"
   echo -e "${BLUE}  CPU: ${cpu}, MEM: ${mem}, Workers: ${workers}, GC: ${gc_limit}${NC}"
   echo -e "${BLUE}  Copies: ${copies}, Batch: ${batch}, Duration: ${duration}s${NC}"
+  echo -e "${BLUE}  MaxStreamsPerConnection: ${grpc_max_streams}${NC}"
   echo -e "${BLUE}==========================================${NC}"
 
   docker compose down 2>/dev/null || true
@@ -400,6 +410,7 @@ run_grpc_test() {
   GATEWAY_CPU="$cpu" GATEWAY_CPU_INT="$cpu_int" GATEWAY_MEMORY="$mem" \
   WORKER_COUNT="$workers" GC_HEAP_HARD_LIMIT="$gc_limit" MAX_BODY_SIZE="$max_body" \
   HTTP1_ENABLED=false HTTP2_ENABLED=false GRPC_ENABLED=true GRPC_PORT=5007 \
+  GRPC_MAX_STREAMS="$grpc_max_streams" GRPC_MAX_MESSAGE_SIZE=16777216 \
     docker compose up --build -d --force-recreate infrastream_gateway
 
   if ! wait_healthy "infrastream_gateway" 60; then

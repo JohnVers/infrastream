@@ -140,6 +140,17 @@ public sealed class Http2ProtocolOptions
 
     /// <summary>HTTP/2 port. Default: <c>5006</c>.</summary>
     public int Port { get; set; } = 5006;
+
+    /// <summary>
+    /// Maximum number of concurrent HTTP/2 streams per connection.
+    /// </summary>
+    /// <remarks>
+    /// Default: <c>100</c> (Kestrel default). Raise for high-parallelism
+    /// clients, e.g. load tests with more than 100 concurrent copies.
+    /// Very high values can degrade performance due to TCP
+    /// head-of-line blocking on a single connection.
+    /// </remarks>
+    public int MaxStreamsPerConnection { get; set; } = 100;
 }
 
 /// <summary>
@@ -152,4 +163,23 @@ public sealed class GrpcProtocolOptions
 
     /// <summary>gRPC port. Default: <c>5007</c>.</summary>
     public int Port { get; set; } = 5007;
+
+    /// <summary>
+    /// Maximum number of concurrent HTTP/2 streams per connection.
+    /// </summary>
+    /// <remarks>
+    /// Default: <c>100</c> (Kestrel default). Raise for high-parallelism
+    /// clients. Very high values can degrade performance due to TCP
+    /// head-of-line blocking on a single connection.
+    /// </remarks>
+    public int MaxStreamsPerConnection { get; set; } = 100;
+
+    /// <summary>
+    /// Maximum size, in bytes, of an incoming gRPC message.
+    /// </summary>
+    /// <remarks>
+    /// Default: <c>4 MB</c> (gRPC default). Raise for large batches
+    /// (e.g. 10k-record protobuf payloads).
+    /// </remarks>
+    public int MaxReceiveMessageSize { get; set; } = 4 * 1024 * 1024;
 }

@@ -1,7 +1,5 @@
 using InfraStream.CollectorEngine.Configuration;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace InfraStream.CollectorEngine.Ingress.Protocols;
 
@@ -10,6 +8,7 @@ namespace InfraStream.CollectorEngine.Ingress.Protocols;
 /// </summary>
 public sealed class Http2KestrelProtocol : IIngressProtocol
 {
+
     /// <inheritdoc />
     public string Name => "Http2";
 
@@ -25,12 +24,13 @@ public sealed class Http2KestrelProtocol : IIngressProtocol
     /// <inheritdoc />
     public void ConfigureListener(KestrelServerOptions kestrel, InfraStreamOptions options)
     {
-        // int port = Port(options);
-        // kestrel.ListenAnyIP(port, lo => lo.Protocols = HttpProtocols.Http2);
-
         int port = Port(options);
-        // Явный IPv4 wildcard: Docker-сеть использует IPv4-адресацию.
-        kestrel.Listen(System.Net.IPAddress.Any, port, lo => lo.Protocols = HttpProtocols.Http2);
+        kestrel.Limits.Http2.MaxStreamsPerConnection =
+            options.Protocols.Http2.MaxStreamsPerConnection;
+        kestrel.Listen(System.Net.IPAddress.Any, port, lo =>
+        {
+            lo.Protocols = HttpProtocols.Http2;
+        });
     }
 
     /// <inheritdoc />
