@@ -5,8 +5,10 @@ services:
       dockerfile: deploy/gateway.Dockerfile
     container_name: infrastream_gateway
     ports:
-      - "5005:5005"
-      - "5002:5002"
+      - "5005:5005"   # Http1 (ConnectionHandler or Kestrel)
+      - "5006:5006"   # Http2
+      - "5007:5007"   # Grpc (future)
+      - "5002:5002"   # Management (health, ready, metrics)
     deploy:
       resources:
         limits:
@@ -19,6 +21,15 @@ services:
       - InfraStream__WorkerCount=${WORKER_COUNT:-4}
       - InfraStream__QueueCapacity=${QUEUE_CAPACITY:-64}
       - InfraStream__Ingress__MaxBodySize=${MAX_BODY_SIZE:-1048576}
+
+      # ---- Ingress protocols ----
+      - InfraStream__Protocols__Http1__Enabled=${HTTP1_ENABLED:-true}
+      - InfraStream__Protocols__Http1__Mode=${HTTP1_MODE:-ConnectionHandler}
+      - InfraStream__Protocols__Http1__Port=${HTTP1_PORT:-0}
+      - InfraStream__Protocols__Http2__Enabled=${HTTP2_ENABLED:-false}
+      - InfraStream__Protocols__Http2__Port=${HTTP2_PORT:-5006}
+      - InfraStream__Protocols__Grpc__Enabled=${GRPC_ENABLED:-false}
+      - InfraStream__Protocols__Grpc__Port=${GRPC_PORT:-5007}
 
       # ---- Logging ----
       # Silence InfraStream logs entirely: INFA_LOG_LEVEL=None docker compose up
@@ -51,7 +62,9 @@ services:
       infrastream_gateway:
         condition: service_healthy
     environment:
-      - LOAD_URL=http://infrastream_gateway:5005/api/v1/ingest
+      - LOAD_URL=${LOAD_URL:-http://infrastream_gateway:5005/api/v1/ingest}
+      - LOAD_HTTP2=${LOAD_HTTP2:-false}
+      - LOAD_PROTOCOL=${LOAD_PROTOCOL:-http}
       - LOAD_BATCH_SIZE=${LOAD_BATCH_SIZE:-10000}
       - LOAD_POOL_SIZE=${LOAD_POOL_SIZE:-32}
       - LOAD_COPIES=${LOAD_COPIES:-60}

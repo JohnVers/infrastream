@@ -51,7 +51,7 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.0"/>
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.0"/>
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0"/>
-    <PackageVersion Include="Confluent.Kafka" Version="2.6.0" />
+    <PackageVersion Include="Confluent.Kafka" Version="2.6.0"/>
 
     <!-- ======================================== -->
     <!-- System / Core                            -->
@@ -77,8 +77,15 @@
     <!-- Benchmarks                               -->
     <!-- ======================================== -->
     <PackageVersion Include="BenchmarkDotNet" Version="0.14.0"/>
-    <PackageVersion Include="NBomber" Version="4.1.0" />
-    <PackageVersion Include="NBomber.Http" Version="4.1.0" />
-    <PackageVersion Include="NBomber.Contracts" Version="4.1.0" />
+    <PackageVersion Include="NBomber" Version="4.1.0"/>
+    <PackageVersion Include="NBomber.Http" Version="4.1.0"/>
+    <PackageVersion Include="NBomber.Contracts" Version="4.1.0"/>
+
+    <PackageVersion Include="Google.Protobuf" Version="3.30.0"/>
+    <PackageVersion Include="Grpc.Tools" Version="2.83.0"/>
+    <PackageVersion Include="Grpc.AspNetCore" Version="2.83.0"/>
+    <PackageVersion Include="Grpc.Net.Client" Version="2.83.0"/>
+    <PackageVersion Include="Grpc.Core.Api" Version="2.83.0"/>
+
   </ItemGroup>
 </Project>

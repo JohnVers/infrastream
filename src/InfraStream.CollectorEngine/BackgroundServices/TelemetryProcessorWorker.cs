@@ -1,9 +1,12 @@
+using System.Text;
 using InfraStream.Core.Exporters;
+using InfraStream.Core.Models;
 using InfraStream.Core.Plugins;
 using InfraStream.CollectorEngine.Ingress;
 using InfraStream.CollectorEngine.Logging;
 using InfraStream.CollectorEngine.Parsing;
 using InfraStream.CollectorEngine.Queues;
+using InfraStream.Contracts;
 using Microsoft.Extensions.Options;
 
 namespace InfraStream.CollectorEngine.BackgroundServices;
@@ -12,26 +15,6 @@ namespace InfraStream.CollectorEngine.BackgroundServices;
 /// Telemetry processing worker.
 /// One instance = one processing thread.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Responsible for:
-/// <list type="number">
-///   <item>Decoding the batch payload via <see cref="IContentDecoder"/>
-///         (skipped when <see cref="ContentEncoding.Identity"/>).</item>
-///   <item>JSON parsing (with selective in-place masking).</item>
-///   <item>Dispatch to <c>ITelemetryProcessor[]</c> and
-///         <c>ITelemetryExporter[]</c>.</item>
-/// </list>
-/// </para>
-/// <para>
-/// The worker drains the channel until it is completed and empty, or until
-/// the shutdown timeout elapses. The hot path is clean: no <c>Stopwatch</c>,
-/// no per-iteration metrics. All log messages use source-generated
-/// <see cref="LoggerMessageAttribute"/> delegates, so disabling them
-/// (e.g. via <c>Logging__LogLevel__InfraStream=None</c>) eliminates both
-/// the console output and the argument-boxing allocations.
-/// </para>
-/// </remarks>
 public sealed class TelemetryProcessorWorker
 {
     private readonly TelemetryChannelQueue _queue;
@@ -46,10 +29,6 @@ public sealed class TelemetryProcessorWorker
     private long _itemsProcessed;
     private long _errors;
 
-    /// <summary>
-    /// Initializes a new instance of the
-    /// <see cref="TelemetryProcessorWorker"/> class.
-    /// </summary>
     public TelemetryProcessorWorker(
         TelemetryChannelQueue queue,
         ITelemetryProcessor[] processors,
@@ -68,29 +47,11 @@ public sealed class TelemetryProcessorWorker
         _decompressedBufferSize = ingressOptions.Value.DecompressedBufferSize;
     }
 
-    /// <summary>Zero-based index of this worker.</summary>
     public int WorkerIndex => _workerIndex;
-
-    /// <summary>Total number of batches successfully processed.</summary>
     public long BatchesProcessed => Interlocked.Read(ref _batchesProcessed);
-
-    /// <summary>Total number of telemetry items parsed and dispatched.</summary>
     public long ItemsProcessed => Interlocked.Read(ref _itemsProcessed);
-
-    /// <summary>Total number of batch-level errors.</summary>
     public long Errors => Interlocked.Read(ref _errors);
 
-    /// <summary>
-    /// Runs the worker loop until the channel is completed and drained,
-    /// or until <paramref name="stoppingToken"/> is signaled.
-    /// </summary>
-    /// <remarks>
-    /// The loop does not exit on <paramref name="stoppingToken"/> alone:
-    /// remaining payloads in the channel are processed first. The token is
-    /// only observed while waiting for new payloads; if it fires while the
-    /// queue is non-empty, the loop continues to drain.
-    /// </remarks>
-    /// <param name="stoppingToken">Token used to force-stop the worker.</param>
     public async Task RunAsync(CancellationToken stoppingToken)
     {
         WorkerLog.Started(_logger, _workerIndex);
@@ -101,20 +62,15 @@ public sealed class TelemetryProcessorWorker
         {
             while (!_queue.IsCompleted || _queue.Count > 0)
             {
-                // Wait for data, completion, or forced stop.
                 if (!_queue.Reader.TryRead(out var payload))
                 {
                     try
                     {
-                        // WaitToReadAsync returns false when the channel is
-                        // completed and empty. Cancellation forces exit only
-                        // when the queue is already empty (checked above).
                         if (!await _queue.Reader.WaitToReadAsync(stoppingToken).ConfigureAwait(false))
                             break;
                     }
                     catch (OperationCanceledException)
                     {
-                        // Force-stop requested; exit even if data remains.
                         break;
                     }
 
@@ -137,6 +93,12 @@ public sealed class TelemetryProcessorWorker
         {
             if (payload.Length == 0)
                 return;
+
+            if (payload.ContentFormat == ContentFormat.Protobuf)
+            {
+                ProcessProtobufPayload(payload);
+                return;
+            }
 
             byte[] parseBuffer;
             int parseLength;
@@ -179,6 +141,69 @@ public sealed class TelemetryProcessorWorker
                 parseBuffer,
                 parseLength,
                 ref dispatcher);
+
+            Interlocked.Add(ref _itemsProcessed, dispatcher.Count);
+            Interlocked.Increment(ref _batchesProcessed);
+        }
+        catch (Exception ex)
+        {
+            Interlocked.Increment(ref _errors);
+            WorkerLog.BatchProcessingError(_logger, ex, _workerIndex, payload.NodeId, payload.Length);
+        }
+        finally
+        {
+            payload.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Protobuf ingress path: parses <see cref="TelemetryBatch"/> natively
+    /// (no JSON step) and feeds each record to the shared dispatcher.
+    /// </summary>
+    /// <remarks>
+    /// PII masking: <see cref="TelemetryMasker.MaskInPlace"/> is applied to
+    /// the UTF-8 bytes of <c>message</c>. Note that the masker targets JSON
+    /// keys (<c>"password"</c>, <c>"secret"</c>, ...) and 16-digit card
+    /// sequences; plain-text patterns like <c>password=...</c> are NOT
+    /// masked on the gRPC path. This is a known limitation to be addressed
+    /// by passing <c>message</c> as a JSON fragment in the protobuf contract.
+    /// </remarks>
+    private void ProcessProtobufPayload(TelemetryBatchPayload payload)
+    {
+        try
+        {
+            var batch = TelemetryBatch.Parser.ParseFrom(payload.Span);
+
+            var dispatcher = new EnginePipelineDispatcher(
+                _processors, _exporters, payload.NodeId, payload.Environment);
+
+            foreach (var record in batch.Payload)
+            {
+                byte[] levelBytes = Encoding.UTF8.GetBytes(record.Level);
+                byte[] messageBytes = Encoding.UTF8.GetBytes(record.Message);
+                byte[] componentBytes = Encoding.UTF8.GetBytes(record.Component);
+
+                // Mask sensitive data in-place on the UTF-8 message bytes.
+                TelemetryMasker.MaskInPlace(messageBytes);
+
+                DateTime timestamp = DateTime.TryParse(
+                    record.Timestamp,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
+                    out var ts)
+                    ? ts
+                    : default;
+
+                var item = new TelemetryItem(
+                    timestamp,
+                    levelBytes,
+                    messageBytes,
+                    componentBytes,
+                    ReadOnlyMemory<LogAttribute>.Empty,
+                    ReadOnlyMemory<byte>.Empty);
+
+                dispatcher.OnItemParsed(in item);
+            }
 
             Interlocked.Add(ref _itemsProcessed, dispatcher.Count);
             Interlocked.Increment(ref _batchesProcessed);

@@ -9,6 +9,7 @@ COPY Directory.Packages.props .
 
 # Copy csproj files for restore caching.
 COPY src/InfraStream.Core/InfraStream.Core.csproj src/InfraStream.Core/
+COPY src/InfraStream.Contracts/InfraStream.Contracts.csproj src/InfraStream.Contracts/
 COPY src/InfraStream.CollectorEngine/InfraStream.CollectorEngine.csproj src/InfraStream.CollectorEngine/
 COPY src/InfraStream.Host/InfraStream.Host.csproj src/InfraStream.Host/
 
@@ -34,7 +35,11 @@ USER appuser
 
 COPY --from=build-env /app/out .
 
-EXPOSE 5001
+# Ingress + management. Additional protocol ports (HTTP/2, gRPC)
+# are exposed when enabled in infrastream.json.
+EXPOSE 5005
+EXPOSE 5006
+EXPOSE 5007
 EXPOSE 5002
 
 ENTRYPOINT ["dotnet", "InfraStream.Host.dll"]

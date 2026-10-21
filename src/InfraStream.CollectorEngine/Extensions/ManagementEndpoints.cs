@@ -1,7 +1,8 @@
 using InfraStream.CollectorEngine.BackgroundServices;
-using Microsoft.AspNetCore.Builder;
+using InfraStream.CollectorEngine.Configuration;
+using InfraStream.CollectorEngine.Ingress.Protocols;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Options;
 
 namespace InfraStream.CollectorEngine.Extensions;
 
@@ -61,5 +62,10 @@ public static class ManagementEndpoints
                 .CollectAndExportAsTextAsync(context.Response.Body);
         })
         .RequireHost(hostFilter);
+
+        // Ingress endpoints for Kestrel-mode protocols.
+        var strategy = app.Services.GetRequiredService<IIngressProtocol>();
+        var options = app.Services.GetRequiredService<IOptions<InfraStreamOptions>>().Value;
+        strategy.MapEndpoints(app, options);
     }
 }

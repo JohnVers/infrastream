@@ -23,15 +23,17 @@
 
   <ItemGroup>
     <ProjectReference Include="..\InfraStream.Core\InfraStream.Core.csproj"/>
+    <ProjectReference Include="..\InfraStream.Contracts\InfraStream.Contracts.csproj" />
   </ItemGroup>
 
+  
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App"/>
-
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="prometheus-net.AspNetCore"/>
+    <PackageReference Include="Grpc.AspNetCore" />
   </ItemGroup>
 
 </Project>

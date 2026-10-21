@@ -28,6 +28,15 @@ public sealed class TelemetryBatchPayload : IDisposable
     public int Length { get; internal set; }
 
     /// <summary>
+    /// Wire format of the payload bytes in <see cref="Array"/>.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ContentFormat.Json"/> for HTTP ingress,
+    /// <see cref="ContentFormat.Protobuf"/> for gRPC ingress.
+    /// </remarks>
+    public ContentFormat ContentFormat { get; set; } = ContentFormat.Json;
+
+    /// <summary>
     /// Content encoding of the payload as declared by the client in the
     /// <c>Content-Encoding</c> header.
     /// </summary>
@@ -79,6 +88,7 @@ public sealed class TelemetryBatchPayload : IDisposable
 
         NodeId = string.Empty;
         Environment = string.Empty;
+        ContentFormat = ContentFormat.Json;
         ContentEncoding = ContentEncoding.Identity;
         Length = 0;
 

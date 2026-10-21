@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+option csharp_namespace = "InfraStream.Contracts";
+
+package infrastream;
+
+service Ingest {
+    rpc SendBatch (TelemetryBatch) returns (IngestReply);
+}
+
+message TelemetryBatch {
+    string node_id = 1;
+    string environment = 2;
+    repeated TelemetryRecord payload = 3;
+}
+
+message TelemetryRecord {
+    string timestamp = 1;
+    string level = 2;
+    string message = 3;
+    string component = 4;
+    string trace_id = 5;
+    string span_id = 6;
+}
+
+message IngestReply {
+    int32 accepted = 1;
+}

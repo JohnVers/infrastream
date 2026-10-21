@@ -21,15 +21,64 @@ public static class Program
         int poolSize = ParseInt("LOAD_POOL_SIZE", DefaultPoolSize);
         int copies = ParseInt("LOAD_COPIES", DefaultCopies);
         int durationSeconds = ParseInt("LOAD_DURATION", DefaultDurationSeconds);
-        PayloadEncoding[] encodings = ParseEncodings(
-            Environment.GetEnvironmentVariable("LOAD_ENCODINGS") ?? "identity,br,gzip");
+
+        string protocol = Environment.GetEnvironmentVariable("LOAD_PROTOCOL") ?? "http";
+        bool useGrpc = string.Equals(protocol, "grpc", StringComparison.OrdinalIgnoreCase);
 
         Console.WriteLine("=== InfraStream NBomber Load Test ===");
         Console.WriteLine($"URL          : {url}");
+        Console.WriteLine($"Protocol     : {(useGrpc ? "gRPC" : "HTTP")}");
         Console.WriteLine($"Batch size   : {batchSize:N0} lines/batch");
         Console.WriteLine($"Pool size    : {poolSize}");
         Console.WriteLine($"Concurrency  : {copies}");
-        Console.WriteLine($"Duration     : {durationSeconds}s per encoding");
+        Console.WriteLine($"Duration     : {durationSeconds}s");
+        Console.WriteLine();
+
+        if (useGrpc)
+            return RunGrpc(url, batchSize, poolSize, copies, durationSeconds);
+
+        return RunHttp(url, batchSize, poolSize, copies, durationSeconds);
+    }
+
+    private static int RunGrpc(string url, int batchSize, int poolSize, int copies, int durationSeconds)
+    {
+        var genSw = Stopwatch.StartNew();
+        var pool = GrpcPayloadGenerator.Generate(poolSize, batchSize, seed: 42);
+        genSw.Stop();
+        Console.WriteLine($"Generated {pool.Length} protobuf batches in {genSw.ElapsedMilliseconds} ms");
+        Console.WriteLine();
+
+        var scenario = GatewayGrpcScenario.Build(
+            url: url,
+            pool: pool,
+            copies: copies,
+            duration: TimeSpan.FromSeconds(durationSeconds));
+
+        var result = NBomberRunner
+            .RegisterScenarios(scenario)
+            .WithTestName("gateway_ingest_grpc")
+            .WithTestSuite("InfraStream")
+            .WithReportFolder("./reports/gateway_ingest_grpc")
+            .WithReportFormats(ReportFormat.Html, ReportFormat.Txt)
+            .Run();
+
+        var stats = result.ScenarioStats.First(s => s.ScenarioName == "grpc_ingest");
+        var summary = RunSummary.FromStats(PayloadEncoding.Identity, stats, batchSize);
+        PrintSummary(summary);
+
+        return summary.FailBatches == 0 ? 0 : 1;
+    }
+
+    private static int RunHttp(string url, int batchSize, int poolSize, int copies, int durationSeconds)
+    {
+        PayloadEncoding[] encodings = ParseEncodings(
+            Environment.GetEnvironmentVariable("LOAD_ENCODINGS") ?? "identity,br,gzip");
+        bool useHttp2 = string.Equals(
+            Environment.GetEnvironmentVariable("LOAD_HTTP2"),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+
+        Console.WriteLine($"HTTP/2       : {useHttp2}");
         Console.WriteLine($"Encodings    : {string.Join(", ", encodings)}");
         Console.WriteLine();
 
@@ -54,7 +103,8 @@ public static class Program
                 payloads: payloads,
                 copies: copies,
                 duration: TimeSpan.FromSeconds(durationSeconds),
-                encoding: encoding);
+                encoding: encoding,
+                useHttp2: useHttp2);
 
             string scenarioName = GatewayIngestScenario.GetScenarioName(encoding);
             string testName = $"gateway_ingest_{encoding.ToString().ToLowerInvariant()}";

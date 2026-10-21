@@ -22,8 +22,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\InfraStream.Contracts\InfraStream.Contracts.csproj"/>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="NBomber"/>
     <PackageReference Include="NBomber.Http"/>
+    <PackageReference Include="Grpc.Net.Client"/>
   </ItemGroup>
 
 </Project>

@@ -34,6 +34,7 @@
     </Folder>
     <Folder Name="/src/">
         <Project Path="src/InfraStream.CollectorEngine/InfraStream.CollectorEngine.csproj" />
+        <Project Path="src/InfraStream.Contracts/InfraStream.Contracts.csproj" />
         <Project Path="src/InfraStream.Core/InfraStream.Core.csproj" />
         <Project Path="src/InfraStream.Host/InfraStream.Host.csproj" />
     </Folder>

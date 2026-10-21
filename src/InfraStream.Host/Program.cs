@@ -1,3 +1,4 @@
+using InfraStream.CollectorEngine.Configuration;
 using InfraStream.CollectorEngine.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -6,9 +7,26 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddInfraStreamLogging();
 
 // Collector Engine + exporters + management endpoints.
-builder.AddCollectorEngine()
-    .AddNullExporter()
-    .WithManagementEndpoints();
+//
+// Configuration is validated before any DI registrations or Kestrel
+// listeners are set up. On failure, we print a clear message to stderr
+// and exit with a non-zero code, so the host does not start with an
+// invalid configuration.
+try
+{
+    builder.AddCollectorEngine()
+        .AddNullExporter()
+        .WithManagementEndpoints();
+}
+catch (ConfigurationValidationException ex)
+{
+    // The logger is not initialized at this point; write to stderr and
+    // exit. Docker/Kubernetes will see the process as failed (non-zero
+    // exit code), and the message will appear in `docker logs` /
+    // `kubectl logs`.
+    Console.Error.WriteLine(ex.Message);
+    return 1;
+}
 
 var app = builder.Build();
 
@@ -26,3 +44,4 @@ app.Logger.LogInformation(
     config.QueueCapacity);
 
 app.Run();
+return 0;

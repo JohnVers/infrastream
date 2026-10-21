@@ -7,11 +7,14 @@ WORKDIR /src
 # Copy Directory.Packages.props (Central Package Management).
 COPY Directory.Packages.props .
 
-# Copy the csproj and restore.
+# Copy csproj files for restore caching.
+COPY src/InfraStream.Contracts/InfraStream.Contracts.csproj src/InfraStream.Contracts/
 COPY tests/LoadTests/LoadTests.csproj tests/LoadTests/
+
 RUN dotnet restore tests/LoadTests/LoadTests.csproj
 
-# Copy the remaining sources.
+# Copy the remaining sources (Contracts + LoadTests).
+COPY src/InfraStream.Contracts/ src/InfraStream.Contracts/
 COPY tests/LoadTests/ tests/LoadTests/
 
 # Publish.
