@@ -57,6 +57,10 @@ hardware (Apple M5 Max via Docker Desktop, arm64 containers). Results are
 specific to this setup; other hardware, payloads, and configurations may
 produce different numbers.
 
+> **Number formatting.** Numbers use `,` as the thousands separator
+> (en-US convention). For example, `237,748` means 237 748 requests per
+> second — not 237.748.
+
 ### Large batches (batch = 10,000 lines, HTTP/1.1, Brotli)
 
 | Config | RPS | lines/s | p50 | p99 | RAM |

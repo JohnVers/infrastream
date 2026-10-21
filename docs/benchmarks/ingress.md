@@ -7,6 +7,10 @@ masking, and dispatch to a null exporter. No downstream I/O.
 _Measured: 2026-10-09, updated 2026-10-21 on the reference machine
 ([hardware.md](hardware.md))._
 
+> **Number formatting.** Numbers use `,` as the thousands separator
+> (en-US convention). For example, `237,748` means 237 748 requests per
+> second, and `7,393,167` means 7 393 167 lines per second.
+
 ## Hardware
 
 See [hardware.md](hardware.md). Reference machine: Apple M5 Max, 4 CPUs,
