@@ -102,8 +102,10 @@ public static class TelemetryBatchParser
                             reader.Read();
 
                             // Mask the value ONLY if the key is sensitive.
+                            // For a sensitive key, the whole value is replaced
+                            // (there is no JSON structure to search inside).
                             ReadOnlyMemory<byte> val = IsSensitiveKey(key.Span)
-                                ? GetSliceMasked(buffer, reader)
+                                ? GetSliceFullyMasked(buffer, reader)
                                 : GetSlice(buffer, reader);
 
                             attributeBuffer[attrCount++] = new LogAttribute(key, val);
@@ -184,6 +186,11 @@ public static class TelemetryBatchParser
     /// in-place in the source buffer.
     /// </summary>
     /// <remarks>
+    /// Used for the <c>message</c> field, which may contain PII embedded in
+    /// text (card numbers, JSON fragments with sensitive keys). For custom
+    /// attributes whose key is sensitive, use
+    /// <see cref="GetSliceFullyMasked"/> instead — the key already
+    /// identifies the value as PII, so there is no JSON structure to search.
     /// For escaped strings masking is skipped: correctly masking a decoded
     /// string is non-trivial. In real logs escapes inside <c>message</c> are
     /// rare, so the risk is considered acceptable.
@@ -208,6 +215,37 @@ public static class TelemetryBatchParser
         // Mask the span in-place inside the buffer.
         Span<byte> target = buffer.AsSpan(tokenStart, tokenLength);
         TelemetryMasker.MaskInPlace(target);
+
+        return new ReadOnlyMemory<byte>(buffer, tokenStart, tokenLength);
+    }
+
+    /// <summary>
+    /// Returns a value slice with the ENTIRE value masked in-place.
+    /// </summary>
+    /// <remarks>
+    /// Used for custom attributes whose key is known to be sensitive:
+    /// the field name already identifies the value as PII, so the whole
+    /// value is replaced with <c>*</c> (no JSON structure to search for,
+    /// unlike <see cref="GetSliceMasked"/>).
+    /// </remarks>
+    private static ReadOnlyMemory<byte> GetSliceFullyMasked(byte[] buffer, in Utf8JsonReader reader)
+    {
+        ReadOnlySpan<byte> value = reader.ValueSpan;
+        if (value.IsEmpty) return ReadOnlyMemory<byte>.Empty;
+
+        bool hasEscape = value.IndexOf((byte)'\\') >= 0;
+        if (hasEscape)
+        {
+            // Escaped string: decode, mask, re-encode. Rare.
+            string decoded = reader.GetString() ?? string.Empty;
+            return Encoding.UTF8.GetBytes(new string('*', decoded.Length));
+        }
+
+        int tokenStart = (int)reader.TokenStartIndex + 1;
+        int tokenLength = value.Length;
+
+        Span<byte> target = buffer.AsSpan(tokenStart, tokenLength);
+        TelemetryMasker.MaskEntireValue(target);
 
         return new ReadOnlyMemory<byte>(buffer, tokenStart, tokenLength);
     }

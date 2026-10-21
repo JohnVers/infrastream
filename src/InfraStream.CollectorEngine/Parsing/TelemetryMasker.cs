@@ -19,7 +19,9 @@ namespace InfraStream.CollectorEngine.Parsing;
 /// </para>
 /// <para>
 /// Plain-text patterns (<c>password=...</c>, <c>secret=...</c>) have been
-/// removed — they are covered by the JSON-key rules.
+/// removed — they are covered by the JSON-key rules for JSON-fragment
+/// values. Plain-text <c>message</c> fields are a known limitation; see
+/// <c>KnownIssues.md</c>.
 /// </para>
 /// </remarks>
 public static class TelemetryMasker
@@ -51,6 +53,23 @@ public static class TelemetryMasker
 
         // 2. Credit cards (16 digits, Luhn check).
         MaskCreditCards(utf8);
+    }
+
+    /// <summary>
+    /// Masks the entire span in place with <c>*</c>.
+    /// </summary>
+    /// <remarks>
+    /// Use this when the field is known to be sensitive by name (for
+    /// example, a custom attribute whose key is <c>password</c>,
+    /// <c>secret</c>, <c>token</c>, or <c>api_key</c>). There is no JSON
+    /// structure to search inside the value — the key already identifies
+    /// it as PII, so the whole value must be replaced.
+    /// </remarks>
+    /// <param name="utf8">UTF-8 bytes to mask in-place.</param>
+    public static void MaskEntireValue(Span<byte> utf8)
+    {
+        if (utf8.IsEmpty) return;
+        utf8.Fill((byte)'*');
     }
 
     // ====================================================================
