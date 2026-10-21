@@ -12,11 +12,16 @@ configuration model.
 ## What this example shows
 
 - Registering InfraStream inside an existing `WebApplicationBuilder`.
-- Receiving telemetry batches over raw TCP on port `5005`.
+- Receiving telemetry batches over HTTP/1.1 on port `5005`.
 - Keeping the application's own HTTP API (`/health`, `/`) intact.
 - Reusing the application's DI container, `IOptions`, and `appsettings.json`.
 - Optional: seeing the telemetry flow with `ConsoleExporter` instead of
   `NullExporter`.
+
+> This example uses the HTTP/1.1 ingress (the default protocol). HTTP/2 and
+> gRPC are configured via `infrastream.json` / environment variables and are
+> not enabled in this minimal example; see `docs/configuration.md` (once
+> available) and the protocol sections in `docs/benchmarks/ingress.md`.
 
 ---
 
@@ -31,8 +36,8 @@ container or sidecar.
 | 1 | You already have an ASP.NET Core service and want it to accept telemetry over the network | Two lines in `Program.cs`, no extra process, no IPC |
 | 2 | Internal gateway for microservices | One or two gateway services accept telemetry from many internal services; PII masking is centralized |
 | 3 | Multi-tenant SaaS receiving telemetry from client-side agents | The API gateway already authenticates clients; `X-Node-Id` / `X-Environment` identify tenants |
-| 5 | Local debug / troubleshooting | `dotnet run` brings up the API **and** the telemetry ingress; no Kafka, no Loki, no Docker |
-| 7 | Legacy integration | A thin .NET adapter wraps a legacy system; the adapter is the single long-lived process |
+| 4 | Local debug / troubleshooting | `dotnet run` brings up the API **and** the telemetry ingress; no Kafka, no Loki, no Docker |
+| 5 | Legacy integration | A thin .NET adapter wraps a legacy system; the adapter is the single long-lived process |
 
 ---
 
@@ -87,7 +92,7 @@ dotnet run
 The application starts two listeners:
 
 - **HTTP API** — `http://localhost:5000` (`/` and `/health`).
-- **Telemetry ingress** — raw TCP on port `5005`.
+- **Telemetry ingress** — HTTP/1.1 on port `5005`.
 
 The ingress port is chosen to avoid a clash with the ASP.NET Core development
 defaults (`5000` for HTTP, `5001` for HTTPS).
@@ -103,11 +108,11 @@ chmod +x curl-example.sh   # first time only
 ./curl-example.sh
 ```
 
-The script sends three requests to `http://localhost:5005`:
+The script sends three requests to `http://localhost:5005/`:
 
 1. **Plain batch** — two log lines, no sensitive fields.
 2. **PII batch** — log lines with `password`, `api_key`, and a credit-card
-   number in the `message` and in custom attributes.
+   number in `message` and in custom attributes.
 3. **Brotli batch** — the same payload as (2), compressed with
    `Content-Encoding: br`.
 
@@ -127,14 +132,14 @@ To print every parsed and masked telemetry item to the console, open
 
 ```csharp
 builder.AddCollectorEngine()
-       .AddNullExporter();
+    .AddNullExporter();
 ```
 
 with:
 
 ```csharp
 builder.AddCollectorEngine()
-       .AddConsoleExporter();
+    .AddConsoleExporter();
 ```
 
 Then re-run `dotnet run` and execute `./curl-example.sh` again. You should
@@ -211,5 +216,8 @@ InfraStream__IngressPort=6005 dotnet run
   The application's own HTTP API uses the ASP.NET Core default (`5000`).
 - The example is intentionally minimal: no authentication, no TLS, no
   persistence.
+- This example uses HTTP/1.1 ingress. For HTTP/2 and gRPC ingress, see the
+  protocol sections in `docs/benchmarks/ingress.md` and the configuration
+  reference (`docs/configuration.md`, once available).
 - For Kubernetes deployment patterns, see `examples/sidecar-k8s/`.
 - For a custom `ITelemetryExporter`, see `examples/custom-exporter/`.
