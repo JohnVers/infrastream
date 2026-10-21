@@ -17,6 +17,14 @@ namespace InfraStream.CollectorEngine.BackgroundServices;
 /// </summary>
 public sealed class TelemetryProcessorWorker
 {
+    /// <summary>
+    /// Number of processed batches between periodic exporter flushes.
+    /// The contract of <see cref="ITelemetryExporter.Flush"/> promises a
+    /// periodic flush; a batch counter is used instead of a timer to keep
+    /// the hot path free of <see cref="System.Diagnostics.Stopwatch"/>.
+    /// </summary>
+    private const int FlushEveryNBatches = 100;
+
     private readonly TelemetryChannelQueue _queue;
     private readonly ITelemetryProcessor[] _processors;
     private readonly ITelemetryExporter[] _exporters;
@@ -28,6 +36,7 @@ public sealed class TelemetryProcessorWorker
     private long _batchesProcessed;
     private long _itemsProcessed;
     private long _errors;
+    private int _batchesSinceFlush;
 
     public TelemetryProcessorWorker(
         TelemetryChannelQueue queue,
@@ -78,11 +87,13 @@ public sealed class TelemetryProcessorWorker
                 }
 
                 ProcessPayload(payload, decompressedBuffer);
+                MaybeFlushExporters();
             }
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(decompressedBuffer);
+            FlushExporters(); // final flush before the worker exits
             WorkerLog.Stopped(_logger, _workerIndex, BatchesProcessed, ItemsProcessed, Errors);
         }
     }
@@ -216,6 +227,40 @@ public sealed class TelemetryProcessorWorker
         finally
         {
             payload.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Flushes all exporters once every <see cref="FlushEveryNBatches"/>
+    /// batches. Called from the worker loop; not on the parser hot path.
+    /// </summary>
+    private void MaybeFlushExporters()
+    {
+        if (++_batchesSinceFlush < FlushEveryNBatches)
+            return;
+
+        _batchesSinceFlush = 0;
+        FlushExporters();
+    }
+
+    /// <summary>
+    /// Best-effort flush of every exporter. A failure in one exporter must
+    /// not prevent the others from flushing, and must not bring down the
+    /// worker.
+    /// </summary>
+    private void FlushExporters()
+    {
+        for (int i = 0; i < _exporters.Length; i++)
+        {
+            try
+            {
+                _exporters[i].Flush();
+            }
+            catch (Exception ex)
+            {
+                Interlocked.Increment(ref _errors);
+                WorkerLog.ExporterFlushFailed(_logger, ex, _workerIndex, _exporters[i].Name);
+            }
         }
     }
 }

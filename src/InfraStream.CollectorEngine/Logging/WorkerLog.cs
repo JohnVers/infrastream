@@ -57,4 +57,14 @@ internal static partial class WorkerLog
         int index,
         string nodeId,
         int len);
+
+    [LoggerMessage(
+        EventId = 205,
+        Level = LogLevel.Warning,
+        Message = "Worker {Index}: exporter '{ExporterName}' flush failed.")]
+    internal static partial void ExporterFlushFailed(
+        ILogger logger,
+        Exception exception,
+        int index,
+        string exporterName);
 }

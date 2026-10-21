@@ -59,8 +59,15 @@ public interface ITelemetryExporter
 
     /// <summary>
     /// Force-flushes the internal buffers to the target system.
-    /// Called periodically (about every 500 ms) by
-    /// <c>TelemetryProcessorWorker</c>.
+    /// Called periodically by <c>TelemetryProcessorWorker</c> — currently
+    /// after every N processed batches (see
+    /// <c>TelemetryProcessorWorker.FlushEveryNBatches</c>), and once more
+    /// from the worker's <c>finally</c> block during shutdown.
     /// </summary>
+    /// <remarks>
+    /// Implementations should be resilient: a failure in one exporter must
+    /// not prevent other exporters from flushing. The worker wraps each
+    /// call in a try/catch and logs the failure.
+    /// </remarks>
     void Flush();
 }
